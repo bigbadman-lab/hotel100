@@ -1,0 +1,3 @@
+# Edge Functions land in later gates (entitlement helpers if needed).
+# Prefer Next.js route handlers in apps/web for the entitlement API (Gate G)
+# to avoid a second backend service.

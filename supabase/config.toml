@@ -1,0 +1,11 @@
+# Project ID left unset — do not invent production project IDs.
+# Fill locally via `supabase link` when credentials are available.
+
+[api]
+enabled = true
+
+[db]
+major_version = 15
+
+[studio]
+enabled = true

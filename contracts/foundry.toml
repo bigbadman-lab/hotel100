@@ -1,0 +1,20 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.28"
+optimizer = true
+optimizer_runs = 200
+ffi = false
+via_ir = false
+# Prefer: `pnpm install:solc` then `pnpm test:contracts` (uses ../.solc/solc-0.8.28).
+# Otherwise Foundry may auto-fetch solc 0.8.28 via svm when network allows.
+
+[fmt]
+line_length = 100
+tab_width = 4
+bracket_spacing = false
+
+[rpc_endpoints]
+# Unresolved — do not invent production RPC URLs
+robinhood_chain = "${HOTEL_RPC_URL}"
