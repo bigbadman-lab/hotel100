@@ -83,5 +83,14 @@ export function createViemChainReader(args: { rpcUrl: string; chainId: number })
       });
       return (code ?? "0x") as Hex;
     },
+
+    async getBlockTimestamp(blockNumber) {
+      try {
+        const block = await client.getBlock({ blockNumber });
+        return Number(block.timestamp);
+      } catch {
+        return null;
+      }
+    },
   };
 }

@@ -324,9 +324,16 @@ export class HotelIndexer {
     nowMs: number,
     partial: Omit<IndexerRunResult, "publicStatus">,
   ): Promise<IndexerRunResult> {
-    await refreshStalePublicStatus(this.store, nowMs, this.config.publicStaleThresholdMs);
+    const prior = await this.store.getPublicStatus();
+    if (prior !== PUBLIC_STATUS.ROOM_SERVICE_DELAYED) {
+      await refreshStalePublicStatus(this.store, nowMs, this.config.publicStaleThresholdMs);
+    }
     const status = await this.store.getPublicStatus();
-    if (status !== PUBLIC_STATUS.SYNCING && partial.gapDetected === false) {
+    if (
+      status !== PUBLIC_STATUS.SYNCING &&
+      status !== PUBLIC_STATUS.ROOM_SERVICE_DELAYED &&
+      partial.gapDetected === false
+    ) {
       await this.store.setPublicStatus(PUBLIC_STATUS.CHECK_IN_OPENS_SOON);
     }
     return {

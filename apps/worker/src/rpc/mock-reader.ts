@@ -83,6 +83,18 @@ export class MockChainReader implements ChainReader {
     // Default EOA
     return "0x";
   }
+
+  /** Optional explicit timestamps; default is block number as unix seconds. */
+  timestamps = new Map<string, number>();
+
+  setTimestamp(blockNumber: bigint, timestamp: number): void {
+    this.timestamps.set(blockNumber.toString(), timestamp);
+  }
+
+  async getBlockTimestamp(blockNumber: bigint): Promise<number | null> {
+    if (!this.blocks.has(blockNumber.toString())) return null;
+    return this.timestamps.get(blockNumber.toString()) ?? Number(blockNumber);
+  }
 }
 
 export function transferFixture(args: {

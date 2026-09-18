@@ -15,11 +15,13 @@
     "@hotel100/config": "workspace:*",
     "@hotel100/db": "workspace:*",
     "@hotel100/domain": "workspace:*",
-    "viem": "^2.37.5"
+    "viem": "^2.37.5",
+    "pg": "^8.16.3"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.3.4",
     "@types/node": "^24.3.1",
+    "@types/pg": "^8.15.5",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"

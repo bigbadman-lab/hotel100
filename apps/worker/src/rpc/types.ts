@@ -37,6 +37,9 @@ export interface ChainReader {
    * Empty code (`0x`) ⇒ EOA at that block.
    */
   getCode(address: AddressHex, blockNumber: bigint): Promise<Hex>;
+
+  /** Block timestamp (unix seconds). Null if the block is missing. */
+  getBlockTimestamp(blockNumber: bigint): Promise<number | null>;
 }
 
 /** Live indexing head: tip minus live confirmations (never mempool / never tip-only). */
