@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HOTEL100 — Desktop Prototype</title>
+<style>
+:root{
+  --bg:#091b14;
+  --bg-2:#0d241b;
+  --panel:#10291f;
+  --panel-2:#132f24;
+  --stone:#d7c7a6;
+  --stone-2:#c6b58f;
+  --cream:#f4ecd8;
+  --muted:#a9b1a4;
+  --line:#365447;
+  --glass:#17342a;
+  --glass-2:#21473a;
+  --gold:#d6a34c;
+  --gold-soft:#f0c877;
+  --danger:#c9796c;
+  --shadow:rgba(0,0,0,.24);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --serif: Georgia, "Times New Roman", serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--cream);font-family:var(--sans)}
+body{min-width:320px}
+button{font:inherit}
+.shell{max-width:1440px;margin:0 auto;padding:0 28px 48px}
+.topbar{
+  min-height:72px;display:flex;align-items:center;gap:18px;border-bottom:1px solid var(--line)
+}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}
+.mark{
+  width:34px;height:34px;border:1px solid var(--stone);display:grid;place-items:center;border-radius:4px;
+  font-family:var(--serif);font-weight:700;color:var(--stone);letter-spacing:-1px
+}
+.brand-copy{display:flex;align-items:baseline;gap:12px;min-width:0}
+.brand-copy strong{font-family:var(--serif);font-size:20px;letter-spacing:.08em;font-weight:600}
+.tagline{font-size:11px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase;white-space:nowrap}
+.top-spacer{flex:1}
+.status{display:flex;align-items:center;gap:8px;font:12px var(--mono);color:var(--muted)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--gold)}
+.service-chip{font:12px var(--mono);border-left:1px solid var(--line);padding-left:14px;color:var(--cream)}
+.wallet-btn{
+  height:38px;padding:0 15px;border-radius:4px;border:1px solid var(--stone);background:transparent;color:var(--cream);
+  cursor:pointer;letter-spacing:.02em
+}
+.wallet-btn:hover{background:rgba(244,236,216,.05)}
+.main{
+  display:grid;grid-template-columns:minmax(220px,260px) minmax(620px,1fr) minmax(220px,260px);
+  gap:22px;align-items:start;padding-top:22px
+}
+.panel{
+  background:linear-gradient(180deg,var(--panel),var(--bg-2));border:1px solid var(--line);border-radius:6px;
+  box-shadow:0 18px 50px var(--shadow);overflow:hidden
+}
+.panel-head{
+  padding:14px 16px;border-bottom:1px solid var(--line);font:11px var(--mono);letter-spacing:.16em;
+  color:var(--muted);text-transform:uppercase
+}
+.stay-body,.service-body{padding:18px 16px}
+.kicker{font:11px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.12em}
+.big-room{font:42px/1 var(--serif);margin:8px 0 4px;color:var(--cream)}
+.rank{font:12px var(--mono);color:var(--gold-soft);margin-bottom:18px}
+.stat{padding:12px 0;border-top:1px solid var(--line)}
+.stat:first-of-type{border-top:0}
+.stat-label{font:10px var(--mono);color:var(--muted);letter-spacing:.12em;text-transform:uppercase}
+.stat-value{font:17px var(--mono);margin-top:5px}
+.move{margin-top:16px;padding:14px;border:1px solid #6b6247;background:rgba(214,163,76,.06);border-radius:4px}
+.move strong{display:block;font:18px var(--mono);color:var(--gold-soft);margin-bottom:4px}
+.move span{font:10px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.mini{padding:10px;border:1px solid var(--line);border-radius:4px}
+.mini strong{display:block;font:14px var(--mono);margin-top:4px}
+.facade-panel{padding:0;background:#0c2119}
+.hotel-toolbar{
+  height:48px;display:flex;align-items:center;padding:0 14px;border-bottom:1px solid var(--line);gap:12px
+}
+.hotel-toolbar .title{font:11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.hotel-toolbar .spacer{flex:1}
+.jump{display:flex;gap:6px}
+.jump button{
+  border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:4px;padding:6px 9px;
+  font:10px var(--mono);cursor:pointer
+}
+.jump button:hover,.jump button.active{color:var(--cream);border-color:var(--stone)}
+.hotel-stage{
+  position:relative;min-height:680px;padding:36px 34px 30px;
+  background:
+    radial-gradient(circle at 50% -20%, rgba(214,163,76,.10), transparent 38%),
+    linear-gradient(180deg,#10281f 0,#0b1d16 100%);
+  overflow:hidden
+}
+.hotel-name{
+  text-align:center;font-family:var(--serif);letter-spacing:.18em;font-size:19px;margin-bottom:18px;color:var(--stone)
+}
+.roof{
+  width:68%;height:16px;margin:0 auto;border:1px solid var(--stone);border-bottom:0;background:#0e251c;
+  position:relative
+}
+.roof:before,.roof:after{content:"";position:absolute;top:-10px;width:16%;height:9px;border:1px solid var(--stone);border-bottom:0}
+.roof:before{left:12%}.roof:after{right:12%}
+.penthouse{
+  width:70%;margin:0 auto 14px;border:1px solid var(--stone);background:#132c23;padding:14px 18px;
+  display:grid;grid-template-columns:86px 1fr auto;align-items:center;gap:16px;cursor:pointer;transition:.2s ease
+}
+.penthouse:hover,.penthouse.selected{background:#17372b}
+.penthouse .ph-label{font:10px var(--mono);letter-spacing:.16em;color:var(--gold-soft)}
+.penthouse .ph-num{font:32px var(--serif)}
+.penthouse .wallet{font:12px var(--mono);color:var(--cream)}
+.penthouse .bal{font:13px var(--mono);color:var(--stone)}
+.facade{
+  border:1px solid var(--stone);background:linear-gradient(90deg,#b8a77f 0,#d7c7a6 8%,#c9b891 50%,#d7c7a6 92%,#b8a77f 100%);
+  padding:14px 18px 22px;box-shadow:0 24px 70px rgba(0,0,0,.28);position:relative
+}
+.room-grid{display:grid;grid-template-columns:repeat(11,1fr);gap:7px}
+.room{
+  aspect-ratio:1/.86;border:1px solid #766c53;background:#19382e;position:relative;cursor:pointer;
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease, background .16s ease;
+  padding:0;min-width:0
+}
+.room:before{
+  content:"";position:absolute;inset:7px 7px 13px;border:1px solid #456051;
+  background:
+    linear-gradient(90deg,transparent 48%,rgba(215,199,166,.23) 49%,rgba(215,199,166,.23) 51%,transparent 52%),
+    linear-gradient(180deg,transparent 48%,rgba(215,199,166,.16) 49%,rgba(215,199,166,.16) 51%,transparent 52%),
+    linear-gradient(180deg,#17362c,#102820)
+}
+.room.occupied:before{background:
+  linear-gradient(90deg,transparent 48%,rgba(239,213,151,.20) 49%,rgba(239,213,151,.20) 51%,transparent 52%),
+  linear-gradient(180deg,transparent 48%,rgba(239,213,151,.16) 49%,rgba(239,213,151,.16) 51%,transparent 52%),
+  linear-gradient(180deg,#24493a,#17342a)}
+.room.lit:before{box-shadow:inset 0 0 18px rgba(214,163,76,.14)}
+.room .num{
+  position:absolute;left:4px;bottom:2px;font:8px var(--mono);color:#4d493c
+}
+.room.vacant:after{
+  content:"VAC";position:absolute;right:3px;bottom:2px;font:7px var(--mono);color:#6a6555
+}
+.room:hover{transform:translateY(-2px);border-color:#5d5240;z-index:3}
+.room.you{
+  border:2px solid var(--gold);box-shadow:0 0 0 2px rgba(214,163,76,.18),0 0 24px rgba(214,163,76,.22);
+  background:#254a3c
+}
+.room.you .num{color:#715c2f;font-weight:700}
+.room.selected{outline:2px solid var(--cream);outline-offset:1px}
+.entrance{
+  width:42%;margin:12px auto 0;border:1px solid #74694f;border-bottom:0;height:82px;position:relative;
+  background:#203e32;display:flex;align-items:flex-end;justify-content:center
+}
+.entrance:before{
+  content:"HOTEL100";position:absolute;top:9px;font:9px var(--serif);letter-spacing:.18em;color:#635a46
+}
+.door{
+  width:54%;height:49px;border:1px solid #6f644d;background:#132f26;position:relative
+}
+.door:after{
+  content:"";position:absolute;left:50%;top:0;bottom:0;border-left:1px solid #6f644d
+}
+.selection{
+  margin-top:14px;min-height:42px;border:1px solid var(--line);background:#0f271e;padding:10px 12px;
+  display:flex;justify-content:space-between;gap:12px;align-items:center
+}
+.selection .left{min-width:0}
+.selection .eyebrow{font:9px var(--mono);letter-spacing:.12em;color:var(--muted)}
+.selection .name{font:12px var(--mono);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.selection .right{text-align:right;font:12px var(--mono);color:var(--stone)}
+.service-amount{font:31px/1.1 var(--serif);margin:8px 0 3px}
+.waiting{font:11px var(--mono);color:var(--gold-soft);letter-spacing:.13em}
+.claim{
+  margin-top:18px;width:100%;height:42px;border-radius:4px;border:1px solid var(--stone);background:var(--cream);
+  color:#102018;font-weight:700;cursor:pointer
+}
+.claim:hover{filter:brightness(.97)}
+.countdown{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+.countdown-time{font:34px var(--mono);margin-top:6px;letter-spacing:.04em}
+.service-note{font:11px/1.5 var(--sans);color:var(--muted);margin-top:12px}
+.bottom{display:grid;grid-template-columns:1fr;gap:16px;margin-top:18px}
+.activity,.market{border:1px solid var(--line);background:#0d231a;border-radius:6px;overflow:hidden}
+.section-title{padding:12px 15px;border-bottom:1px solid var(--line);font:10px var(--mono);letter-spacing:.14em;color:var(--muted);text-transform:uppercase}
+.activity-list{padding:0 15px}
+.activity-row{
+  min-height:38px;display:grid;grid-template-columns:70px 1fr;align-items:center;border-bottom:1px solid rgba(54,84,71,.55);
+  font:11px var(--mono)
+}
+.activity-row:last-child{border-bottom:0}
+.activity-row time{color:var(--muted)}
+.activity-row b{color:var(--gold-soft);font-weight:500}
+.market-row{
+  min-height:58px;padding:0 15px;display:grid;grid-template-columns:repeat(5,minmax(0,1fr)) auto;gap:14px;align-items:center
+}
+.market-cell span{display:block;font:9px var(--mono);color:var(--muted);letter-spacing:.1em;text-transform:uppercase}
+.market-cell strong{display:block;margin-top:4px;font:13px var(--mono)}
+.trade{border:1px solid var(--stone);background:transparent;color:var(--cream);border-radius:4px;padding:9px 13px;cursor:pointer}
+@media (max-width:1100px){
+  .main{grid-template-columns:220px minmax(560px,1fr)}
+  .service-panel{grid-column:1/-1}
+  .service-body{display:grid;grid-template-columns:1fr 220px 1fr;gap:20px;align-items:center}
+  .claim{margin-top:0}
+  .countdown{margin-top:0;padding-top:0;border-top:0}
+}
+@media (max-width:820px){
+  .shell{padding:0 14px 28px}
+  .tagline,.service-chip{display:none}
+  .main{grid-template-columns:1fr}
+  .stay-panel,.service-panel{grid-column:auto}
+  .hotel-stage{min-height:auto;padding:24px 14px 20px}
+  .penthouse{width:88%}
+  .facade{padding:9px 10px 16px}
+  .room-grid{gap:4px}
+  .room:before{inset:4px 4px 10px}
+  .service-body{display:block}
+  .claim{margin-top:18px}
+  .countdown{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+  .market-row{grid-template-columns:repeat(2,1fr);padding:12px 15px}
+  .trade{grid-column:1/-1}
+}
+@media (max-width:520px){
+  .brand-copy strong{font-size:17px}
+  .status{display:none}
+  .wallet-btn{padding:0 10px}
+  .jump{display:none}
+  .hotel-stage{padding-left:8px;padding-right:8px}
+  .penthouse{width:96%;grid-template-columns:62px 1fr;gap:9px}
+  .penthouse .bal{grid-column:2}
+  .room-grid{grid-template-columns:repeat(11,minmax(18px,1fr));gap:2px}
+  .room .num{font-size:6px}
+  .selection{align-items:flex-start;flex-direction:column}
+}
+@media (prefers-reduced-motion:reduce){
+  *{scroll-behavior:auto!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <div class="brand">
+      <div class="mark">H</div>
+      <div class="brand-copy">
+        <strong>HOTEL100</strong>
+        <span class="tagline">100 rooms. No reservations.</span>
+      </div>
+    </div>
+    <div class="top-spacer"></div>
+    <div class="status"><span class="dot"></span> LIVE</div>
+    <div class="service-chip">SERVICE <span id="headerCountdown">08:42</span></div>
+    <button class="wallet-btn" type="button" id="walletBtn">0xA31…88F</button>
+  </header>
+
+  <main class="main">
+    <aside class="panel stay-panel">
+      <div class="panel-head">Your stay</div>
+      <div class="stay-body">
+        <div class="kicker">Currently checked in</div>
+        <div class="big-room">ROOM 47</div>
+        <div class="rank">RANK #47</div>
+
+        <div class="stat">
+          <div class="stat-label">Your balance</div>
+          <div class="stat-value">184,220 HOTEL</div>
+        </div>
+
+        <div class="move">
+          <strong>+31,440 HOTEL</strong>
+          <span>to move into Room 46</span>
+        </div>
+
+        <div class="meta">
+          <div class="mini">
+            <div class="stat-label">Checked in</div>
+            <strong>2h 14m</strong>
+          </div>
+          <div class="mini">
+            <div class="stat-label">Best room</div>
+            <strong>#31</strong>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <section class="panel facade-panel">
+      <div class="hotel-toolbar">
+        <div class="title">The Hotel</div>
+        <div class="spacer"></div>
+        <div class="jump">
+          <button type="button" data-jump="top">TOP</button>
+          <button type="button" class="active" data-jump="mine">MY ROOM</button>
+          <button type="button" data-jump="100">ROOM 100</button>
+        </div>
+      </div>
+      <div class="hotel-stage">
+        <div class="hotel-name">HOTEL100</div>
+        <div class="roof"></div>
+
+        <button class="penthouse" id="penthouse" type="button" aria-label="Penthouse, rank 1">
+          <div>
+            <div class="ph-label">PENTHOUSE</div>
+            <div class="ph-num">01</div>
+          </div>
+          <div class="wallet">0x71c…91b2</div>
+          <div class="bal">4.82M HOTEL</div>
+        </button>
+
+        <div class="facade">
+          <div class="room-grid" id="roomGrid" aria-label="Rooms 2 through 100"></div>
+          <div class="entrance"><div class="door"></div></div>
+        </div>
+
+        <div class="selection" aria-live="polite">
+          <div class="left">
+            <div class="eyebrow">SELECTED ROOM</div>
+            <div class="name" id="selectedName">ROOM 47 · YOU · 0xA31…88F</div>
+          </div>
+          <div class="right" id="selectedBalance">184,220 HOTEL</div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel service-panel">
+      <div class="panel-head">Room Service</div>
+      <div class="service-body">
+        <div>
+          <div class="kicker">Waiting for you</div>
+          <div class="service-amount">0.004821 ETH</div>
+          <div class="waiting">ROOM SERVICE WAITING</div>
+        </div>
+
+        <button class="claim" type="button" id="claimBtn">CLAIM ROOM SERVICE</button>
+
+        <div class="countdown">
+          <div class="stat-label">Next service</div>
+          <div class="countdown-time" id="countdown">08:42</div>
+          <div class="service-note">Every 15 minutes. Split pro rata across the eligible top 100 at the financial snapshot.</div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <div class="bottom">
+    <section class="activity">
+      <div class="section-title">Live activity</div>
+      <div class="activity-list">
+        <div class="activity-row"><time>14:18:04</time><span>0x8f2…19c <b>checked into Room 72</b></span></div>
+        <div class="activity-row"><time>14:17:41</time><span>0x33a…e10 <b>upgraded 19 → 11</b></span></div>
+        <div class="activity-row"><time>14:15:02</time><span><b>Room Service arrived</b> · 0.42 ETH served</span></div>
+        <div class="activity-row"><time>14:13:38</time><span>0x71c…91b2 <b>took the Penthouse</b></span></div>
+        <div class="activity-row"><time>14:12:51</time><span>0x5d1…0aa <b>downgraded 44 → 51</b></span></div>
+      </div>
+    </section>
+
+    <section class="market">
+      <div class="section-title">Hotel market</div>
+      <div class="market-row">
+        <div class="market-cell"><span>Token</span><strong>$HOTEL</strong></div>
+        <div class="market-cell"><span>Price</span><strong>$0.00182</strong></div>
+        <div class="market-cell"><span>Market cap</span><strong>$182K</strong></div>
+        <div class="market-cell"><span>Liquidity</span><strong>$48K</strong></div>
+        <div class="market-cell"><span>Holders</span><strong>241</strong></div>
+        <button class="trade" type="button" id="tradeBtn">BUY / TRADE</button>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+(() => {
+  const root = document;
+  const grid = root.getElementById('roomGrid');
+  const selectedName = root.getElementById('selectedName');
+  const selectedBalance = root.getElementById('selectedBalance');
+  const penthouse = root.getElementById('penthouse');
+  const mine = 47;
+
+  function shortWallet(rank){
+    const a = ((rank * 2654435761) >>> 0).toString(16).padStart(8,'0');
+    return '0x' + a.slice(0,3) + '…' + a.slice(-3);
+  }
+  function balance(rank){
+    if(rank === mine) return 184220;
+    const start = 3910000;
+    return Math.max(251000, Math.floor(start / Math.pow(rank, .62)));
+  }
+  function fmt(n){
+    if(n >= 1_000_000) return (n/1_000_000).toFixed(2) + 'M HOTEL';
+    if(n >= 1000) return Math.round(n/1000) + 'K HOTEL';
+    return n.toLocaleString() + ' HOTEL';
+  }
+  function selectRoom(rank, el){
+    root.querySelectorAll('.room.selected,.penthouse.selected').forEach(x => x.classList.remove('selected'));
+    el.classList.add('selected');
+    if(rank === 1){
+      selectedName.textContent = 'PENTHOUSE · 0x71c…91b2';
+      selectedBalance.textContent = '4.82M HOTEL';
+    } else {
+      const isYou = rank === mine;
+      selectedName.textContent = `ROOM ${String(rank).padStart(2,'0')} · ${isYou ? 'YOU · 0xA31…88F' : shortWallet(rank)}`;
+      selectedBalance.textContent = fmt(balance(rank));
+    }
+  }
+
+  for(let rank=2; rank<=100; rank++){
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'room ' + (rank <= 93 ? 'occupied ' : 'vacant ') + (rank % 4 === 0 ? 'lit ' : '') + (rank === mine ? 'you ' : '');
+    b.dataset.rank = rank;
+    b.setAttribute('aria-label', `Room ${rank}${rank===mine?', your room':''}`);
+    const n = document.createElement('span');
+    n.className = 'num';
+    n.textContent = String(rank).padStart(2,'0');
+    b.appendChild(n);
+    b.addEventListener('click', () => selectRoom(rank,b));
+    grid.appendChild(b);
+  }
+  const myRoom = root.querySelector(`.room[data-rank="${mine}"]`);
+  myRoom.classList.add('selected');
+
+  penthouse.addEventListener('click', () => selectRoom(1,penthouse));
+
+  root.querySelectorAll('[data-jump]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      root.querySelectorAll('[data-jump]').forEach(x=>x.classList.remove('active'));
+      btn.classList.add('active');
+      const target = btn.dataset.jump === 'top' ? penthouse :
+        btn.dataset.jump === 'mine' ? myRoom :
+        root.querySelector('.room[data-rank="100"]');
+      target.scrollIntoView({behavior:'smooth',block:'center'});
+      target.focus({preventScroll:true});
+    });
+  });
+
+  let remaining = 8*60+42;
+  const cd = root.getElementById('countdown');
+  const hcd = root.getElementById('headerCountdown');
+  function tick(){
+    const m = Math.floor(remaining/60);
+    const s = remaining%60;
+    const txt = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    cd.textContent = txt;
+    hcd.textContent = txt;
+    if(remaining > 0) remaining--;
+    else {
+      cd.textContent = 'ARRIVING';
+      hcd.textContent = 'ARRIVING';
+    }
+  }
+  tick();
+  setInterval(tick,1000);
+
+  root.getElementById('claimBtn').addEventListener('click', e=>{
+    e.currentTarget.textContent = 'PROTOTYPE — CLAIM DISABLED';
+    e.currentTarget.disabled = true;
+  });
+  root.getElementById('tradeBtn').addEventListener('click', e=>{
+    e.currentTarget.textContent = 'PROTOTYPE ONLY';
+    e.currentTarget.disabled = true;
+  });
+  root.getElementById('walletBtn').addEventListener('click', e=>{
+    e.currentTarget.textContent = 'CONNECTED';
+  });
+})();
+</script>
+</body>
+</html>
