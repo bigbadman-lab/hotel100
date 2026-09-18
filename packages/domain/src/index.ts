@@ -1,7 +1,7 @@
-/**
- * Shared HOTEL domain logic — Gate B+.
- * Placeholder export so the workspace package resolves during bootstrap.
- */
-export const HOTEL_ROOM_COUNT = 100 as const;
-export const HOTEL_CHAIN_ID = 4663 as const;
-export const ROOM_SERVICE_INTERVAL_SECONDS = 900 as const;
+export * from "./address.js";
+export * from "./constants.js";
+export * from "./financial.js";
+export * from "./ranking.js";
+export * from "./required-balance.js";
+export * from "./service-time.js";
+export * from "./status.js";
