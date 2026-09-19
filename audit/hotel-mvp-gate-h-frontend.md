@@ -174,9 +174,9 @@ At 1440px the page is still a hotel, not a dashboard. Room #1 is the Penthouse. 
 
 ## Components
 
-Unchanged visually: `HotelHeader`, `HotelOperationalState`, `YourStayPanel`, `HotelFacade`, `LobbyQueue`, `RoomServicePanel`, `LiveActivity`, `HotelMarketStrip`, `HotelApp`.
+Unchanged outside the building: `HotelHeader`, `HotelOperationalState`, `YourStayPanel`, `LobbyQueue`, `RoomServicePanel`, `LiveActivity`, `HotelMarketStrip`.
 
-Checked-in since and best room render as `—` when the canonical row does not have them. That avoids inventing a stay time.
+`HotelFacade`, the penthouse, standard rooms, the entrance, and `SelectedRoomSummary` were restyled in the façade refactor below. Checked-in since and best room still render as `—` when the canonical row does not have them.
 
 ---
 
@@ -213,6 +213,174 @@ Absent database or Room Service address fails closed. Neither was invented.
 - Production broadcasts performed: **NONE**
 - Production claim signatures performed: **NONE**
 - Gate I **not started**
+
+---
+
+## Façade Refactor
+
+Targeted visual pass only. Backend, ranking, API contracts, Room Service economics, wallet flow, and page layout were not changed. Room #1 stays the Penthouse. Rooms #2–#100 stay a fixed 11×9 grid in DOM order.
+
+### Files changed
+
+- `apps/web/src/hotel/components/HotelView.tsx` — façade, penthouse, room windows, entrance, selected-room summary markup
+- `apps/web/src/app/globals.css` — elevation, windows, entrance, reduced-motion, 1024/390 façade rules
+- `apps/web/src/hotel.test.tsx` — asserts vacant rooms no longer stamp `VAC` on the façade
+
+### Visual changes
+
+- Standard rooms are recessed four-pane windows in a continuous stone wall: stone mullions, dark green glazing, a small room number on the sill. No wallet text in a room.
+- `VAC` is gone from the façade. Vacant windows are unlit. Occupied windows are warmer and brighter, not a strong glow. `VACANT` remains only in the selected-room summary and other copy outside the elevation.
+- The connected guest’s room keeps a muted-gold frame and a slightly warmer interior. Selection is a cream outline on the window, with the existing summary below the building.
+- The Penthouse is the top floor under a parapet and dentil cornice: wider three-light suite, `PENTHOUSE`, `01`, shortened wallet, and HOTEL balance. No reward multiplier.
+- Side pilasters, floor joints, and a stone plinth tie the roof, suite, window wall, and entrance into one elevation.
+- The entrance is centred in the wall: engraved `HOTEL100`, dark double doors, sitting above the lobby panel. It is not a room.
+
+### Responsive impact
+
+- 1440: the elevation is the centrepiece. Windows read as glazing, Room 47 is the gold window, rooms 96–100 are dark.
+- 1024: the same building stays intact; Room Service remains below the hotel.
+- 390: the full 11×9 façade stacks with the rest of the page. No list fallback. Room numbers stay on the sills; the selected-room summary carries the full detail. No page-level horizontal scroll (`overflow-x: hidden` on `body`, grid columns `minmax(0, 1fr)`).
+
+### Tests / checks
+
+| Check | Result |
+|-------|--------|
+| `pnpm --filter @hotel100/web test` | **PASS** — 33 tests |
+| `pnpm --filter @hotel100/web typecheck` | **PASS** |
+| `pnpm exec biome check apps/web/src` | **PASS** |
+| `pnpm --filter @hotel100/web build` | **PASS** |
+| Production broadcasts | **NONE** |
+
+### Screenshots
+
+| Viewport | Path |
+|----------|------|
+| 1440 | `audit/gate-h-screenshots/facade-1440.png` |
+| 1024 | `audit/gate-h-screenshots/facade-1024.png` |
+| 390 | `audit/gate-h-screenshots/facade-390.png` |
+
+Fixture preview, so occupied and vacant windows are both visible. Not production data.
+
+### Design deviations
+
+- Mullions are a simple four-pane cross, not moulded joinery.
+- The cornice is a CSS parapet and dentil strip, not a modelled roof.
+- On a 390px window the panes are small; the room number and the selected-room summary are the readable labels.
+
+---
+
+## Room Number Clarity Pass
+
+Targeted visual pass only. The façade refactor stays. Backend logic, API behavior, ranking, wallet flow, room mapping, and page layout were not changed. Room #1 stays the Penthouse. Rooms #2–#100 stay a fixed 11×9 grid in DOM order. `VAC` stays off the façade. No production broadcast.
+
+### Files changed
+
+- `apps/web/src/hotel/components/HotelView.tsx` — Penthouse identity and the per-window plaque
+- `apps/web/src/app/globals.css` — plaque, number, and Penthouse room-number styles, including the 820px and 520px sizes
+
+### Exact room-number treatment
+
+Each standard room is a column: recessed four-pane glazing, then a dedicated plaque directly beneath it. The plaque is the full width of that window, centred, with a 3px gap so the number never overlaps the glass.
+
+- Background: recessed stone, `linear-gradient(180deg, #4a3f30, #2c261c)`, inset shadow
+- Number: cream `#f4ecd8`, IBM Plex Mono, weight 500, centred
+- Format: `padStart(2, "0")` — `02` … `99`, and `100`
+- Desktop and 1024: 12px, letter-spacing `0.04em`, plaque min-height 14px
+- Connected guest only: the number uses muted gold `#f0c877`, and that plaque alone gets a 1px gold inset. The gold window frame and warmer interior are unchanged
+- Selected room: cream outline on the glazing only. Detail stays in the selected-room summary. No tooltip
+- Vacant and occupied rooms use the same plaque. Readability does not depend on occupancy
+
+Gold is not used on every room.
+
+### Penthouse number treatment
+
+`PENTHOUSE` stays centred above the three-light suite. Directly under that glass, a matching dark plaque reads `ROOM` (8px mono, stone `#d7c7a6`) and `01` (15px Newsreader, cream `#f4ecd8`). `01` is the room number, not a decorative counter. If the connected guest holds the Penthouse, `01` uses the same muted gold as the connected standard room. The shortened wallet and HOTEL balance stay below that plaque.
+
+### Responsive behavior
+
+- 1440: 12px cream numbers on dark plaques, immediately readable. Penthouse plaque reads `ROOM 01`. Measured `scrollWidth` equals `clientWidth` (1440). Glazing-to-plaque gap is 3px. Room `100` does not overflow its plaque.
+- 1024: same plaque treatment and 12px type. `scrollWidth` equals `clientWidth` (1024).
+- 390: plaques stay. Padding and type step down rather than hiding numbers: plaque min-height 11px, numbers 8px, letter-spacing 0, Penthouse `01` at 12px. Room `100` does not overflow its plaque. No overlap. `scrollWidth` equals `clientWidth` (390). No page-level horizontal scroll.
+
+### Screenshots
+
+Fixture preview (`?preview=fixture`), so occupied and vacant rooms are both visible. Not production data.
+
+| Viewport | Path |
+|----------|------|
+| 1440 | `audit/gate-h-screenshots/numbers-1440.png` |
+| 1024 | `audit/gate-h-screenshots/numbers-1024.png` |
+| 390 | `audit/gate-h-screenshots/numbers-390.png` |
+
+### Tests / checks
+
+| Check | Result |
+|-------|--------|
+| `pnpm --filter @hotel100/web test` | **PASS** — 33 tests |
+| `pnpm --filter @hotel100/web typecheck` | **PASS** |
+| `pnpm exec biome check apps/web/src` | **PASS** |
+| `pnpm --filter @hotel100/web build` | **PASS** |
+| Production broadcasts | **NONE** |
+
+---
+
+## Logo asset preparation
+
+Canonical logo path: `apps/web/public/brand/hotel100-logo.png` (public URL `/brand/hotel100-logo.png`).
+
+The PNG is supplied manually by the human operator. No image was generated or substituted. `.gitignore` does not exclude that path. `apps/web/public/brand/.gitkeep` keeps the empty directory until the file is copied.
+
+The header still showed the temporary bell mark and the `HOTEL100` wordmark at the end of this step. The following section replaces that mark.
+
+Production broadcasts: **NONE**
+
+---
+
+## Header Logo Integration
+
+The supplied PNG is now the header mark. The temporary bell icon is gone. Backend, ranking, wallet, façade, Room Service, activity, and market data were not changed.
+
+### Asset path
+
+`apps/web/public/brand/hotel100-logo.png` served as `/brand/hotel100-logo.png`. Intrinsic size 2172×724. The file was not regenerated, recolored, cropped, or substituted.
+
+### Files changed
+
+- `apps/web/src/hotel/components/HotelView.tsx` — header uses `next/image` for the logo
+- `apps/web/src/app/globals.css` — logo size only; the bell frame styles are removed
+
+### Rendered treatment
+
+The logo sits immediately left of the existing `HOTEL100` wordmark, with the tagline, live/sync state, service countdown, and wallet button unchanged. No border, shadow, glow, or background card was added. The image keeps its 3:1 ratio.
+
+Because the wordmark already says HOTEL100, the image is decorative: `alt=""` and `aria-hidden="true"`. It is not announced as a second “HOTEL100 logo”.
+
+### Final rendered dimensions
+
+| Viewport | Rendered size |
+|----------|----------------|
+| 1440 | 108×36 px |
+| 390 | 90×30 px |
+
+Desktop height is 36px, inside the 32–38px range. Mobile height is 30px, inside the 28–32px range. Measured ratio is 3.000, so it is not stretched. Gap to the wordmark is the existing 12px brand gap.
+
+### Responsive behavior
+
+Above 820px the logo is 36px tall. At 820px and below, including 390px, it is 30px tall. Width follows the asset ratio.
+
+### Screenshot
+
+`audit/gate-h-screenshots/header-1440.png`
+
+### Tests / checks
+
+| Check | Result |
+|-------|--------|
+| `pnpm --filter @hotel100/web test` | **PASS** — 33 tests |
+| `pnpm --filter @hotel100/web typecheck` | **PASS** |
+| `pnpm exec biome check apps/web/src` | **PASS** |
+| `pnpm --filter @hotel100/web build` | **PASS** |
+| Production broadcasts | **NONE** |
 
 ---
 

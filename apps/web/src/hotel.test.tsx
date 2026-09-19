@@ -43,7 +43,8 @@ describe("Gate H public hotel UI", () => {
     expect(html.indexOf('data-room="12"')).toBeLessThan(html.indexOf('data-room="100"'));
     expect(html).toContain('id="room-47"');
     expect(html).toContain("you");
-    expect(html).toContain(">VAC<");
+    expect(html).toContain("room vacant");
+    expect(html).not.toContain(">VAC<");
     expect(html).not.toContain("0x0000000000000000000000000000000000000a31");
   });
 

@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, Inter, Newsreader } from "next/font/google";
+import { Cormorant_Garamond, IBM_Plex_Mono, Inter } from "next/font/google";
 import type { ReactNode } from "react";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
-const newsreader = Newsreader({
+const display = Cormorant_Garamond({
   subsets: ["latin"],
-  variable: "--font-newsreader",
+  weight: ["400", "500", "600", "700"],
+  style: ["normal", "italic"],
+  variable: "--font-display",
   display: "swap",
 });
 const plex = IBM_Plex_Mono({
@@ -24,7 +26,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} ${newsreader.variable} ${plex.variable}`}>
+      <body className={`${inter.variable} ${display.variable} ${plex.variable}`}>
         {children}
       </body>
     </html>

@@ -1,23 +1,30 @@
+import Image from "next/image";
 import { formatEthFromWei, formatRawUnits, formatStayDuration, shortenAddress } from "../format";
 import type { HeaderStatus } from "../present";
 import type { ActivityItem, GuestStayView, HotelSnapshot, LobbyGuest, RoomSlot } from "../types";
 
-function BellMark() {
+const HOTEL_LOGO_SRC = "/brand/hotel100-logo3.png";
+
+function ServiceBell(props: { className?: string }) {
   return (
-    <svg className="mark" viewBox="0 0 34 34" aria-hidden="true">
-      <rect x="0.5" y="0.5" width="33" height="33" fill="none" stroke="currentColor" />
+    <svg
+      className={props.className}
+      viewBox="0 0 40 40"
+      width="40"
+      height="40"
+      aria-hidden="true"
+      focusable="false"
+    >
       <path
-        d="M17 8c-3 0-5 2.2-5 5.2V18l-1.4 2.2h12.8L22 18v-4.8C22 10.2 20 8 17 8z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.2"
+        fill="currentColor"
+        d="M20 5.5c1.1 0 2 .9 2 2v1.2c5.2.7 9.2 5.1 9.2 10.4v1.1H8.8v-1.1c0-5.3 4-9.7 9.2-10.4V7.5c0-1.1.9-2 2-2z"
       />
       <path
-        d="M15.2 21.5a1.8 1.8 0 0 0 3.6 0"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.2"
+        fill="currentColor"
+        d="M7.2 21.2h25.6c.9 0 1.5.8 1.3 1.6-.7 2.4-2.8 4.3-5.4 5.1H11.3c-2.6-.8-4.7-2.7-5.4-5.1-.2-.8.4-1.6 1.3-1.6z"
       />
+      <rect fill="currentColor" x="9" y="29.2" width="22" height="3.2" rx="1.2" />
+      <circle fill="currentColor" cx="20" cy="5.2" r="2.2" />
     </svg>
   );
 }
@@ -31,9 +38,16 @@ export function HotelHeader(props: {
   return (
     <header className="topbar">
       <div className="brand">
-        <BellMark />
+        <ServiceBell className="brand-bell" />
+        <Image
+          className="brand-logo"
+          src={HOTEL_LOGO_SRC}
+          alt="HOTEL100"
+          width={2172}
+          height={724}
+          priority
+        />
         <div className="brand-copy">
-          <strong>HOTEL100</strong>
           <span className="tagline">100 rooms. No reservations.</span>
         </div>
       </div>
@@ -226,76 +240,148 @@ export function HotelFacade(props: {
         </div>
       </div>
       <div className={`hotel-stage${props.stale ? " stale" : ""}`}>
-        <h1 className="hotel-name">HOTEL100</h1>
-        <div className="roof" />
-        {penthouse ? (
-          <button
-            id="room-1"
-            type="button"
-            className={[
-              "penthouse",
-              penthouse.occupant ? "occupied" : "vacant",
-              props.youRoom === 1 ? "you" : "",
-              props.selectedRoom === 1 ? "selected" : "",
-              props.penthouseMotion ? "motion-takeover" : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            aria-pressed={props.selectedRoom === 1}
-            aria-label={roomLabel(penthouse, props.youRoom === 1, props.selectedRoom === 1).replace(
-              "Room 1",
-              "Penthouse, room 1",
-            )}
-            onClick={() => props.onSelect(1)}
-          >
-            <div>
-              <div className="ph-label">PENTHOUSE</div>
-              <div className="ph-num">01</div>
-            </div>
-            <div className="ph-wallet">
-              {penthouse.occupant ? shortenAddress(penthouse.occupant.address) : "VACANT"}
-            </div>
-            <div className="ph-bal">
-              {penthouse.occupant ? `${formatRawUnits(penthouse.occupant.balanceRaw)} HOTEL` : "—"}
-            </div>
-          </button>
-        ) : null}
-        <div className={`facade${props.arriving ? " arriving" : ""}`}>
-          <section className="room-grid" aria-label="Rooms 2 through 100">
-            {standard.map((slot) => {
-              const you = props.youRoom === slot.room;
-              const selectedRoom = props.selectedRoom === slot.room;
-              return (
-                <button
-                  key={slot.room}
-                  id={`room-${slot.room}`}
-                  type="button"
-                  data-room={slot.room}
-                  className={[
-                    "room",
-                    slot.occupant ? "occupied" : "vacant",
-                    you ? "you" : "",
-                    selectedRoom ? "selected" : "",
-                    props.lightRooms.includes(slot.room) ? "motion-light" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  aria-pressed={selectedRoom}
-                  aria-label={roomLabel(slot, you, selectedRoom)}
-                  onClick={() => props.onSelect(slot.room)}
-                >
-                  <span className="num">{String(slot.room).padStart(2, "0")}</span>
-                  {slot.occupant ? null : <span className="vac">VAC</span>}
-                </button>
-              );
-            })}
-          </section>
-          <div
-            className={`entrance${props.entranceMotion ? " motion-checkin" : ""}`}
-            aria-hidden="true"
-          >
-            <div className="door" />
+        <div className="building">
+          <div className="parapet">
+            <div className="parapet-pediment" aria-hidden="true" />
+            <div className="parapet-cap" aria-hidden="true" />
+            <ServiceBell className="parapet-bell" />
+            <h1 className="hotel-name">
+              <Image
+                className="parapet-logo"
+                src={HOTEL_LOGO_SRC}
+                alt="HOTEL100"
+                width={2172}
+                height={724}
+                priority
+              />
+            </h1>
+            <p className="parapet-tagline">A Higher Kind of Stay.</p>
           </div>
+          {penthouse ? (
+            <button
+              id="room-1"
+              type="button"
+              className={[
+                "penthouse",
+                penthouse.occupant ? "occupied" : "vacant",
+                props.youRoom === 1 ? "you" : "",
+                props.selectedRoom === 1 ? "selected" : "",
+                props.penthouseMotion ? "motion-takeover" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              aria-pressed={props.selectedRoom === 1}
+              aria-label={roomLabel(
+                penthouse,
+                props.youRoom === 1,
+                props.selectedRoom === 1,
+              ).replace("Room 1", "Penthouse, room 1")}
+              onClick={() => props.onSelect(1)}
+            >
+              <span className="ph-plate">
+                <span className="ph-label">PENTHOUSE</span>
+              </span>
+              <span className="ph-windows" aria-hidden="true">
+                <span className="ph-light">
+                  <span className="ph-glow" />
+                </span>
+                <span className="ph-light">
+                  <span className="ph-glow" />
+                </span>
+                <span className="ph-light">
+                  <span className="ph-glow" />
+                </span>
+              </span>
+              <span className="ph-room-plaque">
+                <span className="ph-room-kicker">ROOM</span>
+                <span className="ph-num">01</span>
+              </span>
+              <span className="ph-plaque">
+                <span className="ph-wallet">
+                  {penthouse.occupant ? shortenAddress(penthouse.occupant.address) : "—"}
+                </span>
+                <span className="ph-bal">
+                  {penthouse.occupant
+                    ? `${formatRawUnits(penthouse.occupant.balanceRaw)} HOTEL`
+                    : "—"}
+                </span>
+              </span>
+            </button>
+          ) : null}
+          <div className={`facade${props.arriving ? " arriving" : ""}`}>
+            <section className="room-grid" aria-label="Rooms 2 through 100">
+              {standard.map((slot) => {
+                const you = props.youRoom === slot.room;
+                const selectedRoom = props.selectedRoom === slot.room;
+                return (
+                  <button
+                    key={slot.room}
+                    id={`room-${slot.room}`}
+                    type="button"
+                    data-room={slot.room}
+                    className={[
+                      "room",
+                      slot.occupant ? "occupied" : "vacant",
+                      you ? "you" : "",
+                      selectedRoom ? "selected" : "",
+                      props.lightRooms.includes(slot.room) ? "motion-light" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    aria-pressed={selectedRoom}
+                    aria-label={roomLabel(slot, you, selectedRoom)}
+                    onClick={() => props.onSelect(slot.room)}
+                  >
+                    <span className="glazing" aria-hidden="true">
+                      <span className="mullion-x" />
+                      <span className="mullion-y" />
+                      <span className="pane" />
+                      <span className="pane" />
+                      <span className="pane" />
+                      <span className="pane" />
+                      <span className="glass-sheen" />
+                    </span>
+                    <span className="plaque">
+                      <span className="num">{String(slot.room).padStart(2, "0")}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </section>
+            <div
+              className={`entrance${props.entranceMotion ? " motion-checkin" : ""}`}
+              aria-hidden="true"
+            >
+              <div className="entrance-canopy">
+                <span className="canopy-dome" />
+                <span className="canopy-valence">HOTEL100</span>
+              </div>
+              <div className="entrance-bay">
+                <span className="entrance-lantern">
+                  <span className="lantern-glow" />
+                </span>
+                <div className="doorway">
+                  <span className="leaf">
+                    <span className="door-glass" />
+                    <span className="door-handle" />
+                  </span>
+                  <span className="leaf">
+                    <span className="door-glass" />
+                    <span className="door-handle" />
+                  </span>
+                </div>
+                <span className="entrance-lantern">
+                  <span className="lantern-glow" />
+                </span>
+              </div>
+              <div className="entrance-forecourt">
+                <span className="planter" />
+                <span className="entrance-spill" />
+                <span className="planter" />
+              </div>
+            </div>
+          </div>
+          <div className="plinth" aria-hidden="true" />
         </div>
         <SelectedRoomSummary slot={selected} you={props.youRoom === props.selectedRoom} />
       </div>
