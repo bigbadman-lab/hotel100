@@ -217,9 +217,7 @@ describe("Gate E Postgres IndexerStore persistence", () => {
     expect(r1.gapDetected).toBe(true);
     expect(await store1.getPublicStatus()).toBe(PUBLIC_STATUS.SYNCING);
     const c1 = await store1.getCursor();
-    expect(
-      c1.lastIndexedBlock === null || c1.lastIndexedBlock < LAUNCH + 2n,
-    ).toBe(true);
+    expect(c1.lastIndexedBlock === null || c1.lastIndexedBlock < LAUNCH + 2n).toBe(true);
 
     // Restart with same gap still present — must not jump past hole
     const store2 = createPostgresIndexerStore(executor);
@@ -227,9 +225,7 @@ describe("Gate E Postgres IndexerStore persistence", () => {
     expect(r2.gapDetected).toBe(true);
     expect(await store2.getPublicStatus()).toBe(PUBLIC_STATUS.SYNCING);
     const c2 = await store2.getCursor();
-    expect(
-      c2.lastIndexedBlock === null || c2.lastIndexedBlock < LAUNCH + 2n,
-    ).toBe(true);
+    expect(c2.lastIndexedBlock === null || c2.lastIndexedBlock < LAUNCH + 2n).toBe(true);
   });
 
   it("refuses silent memory fallback when database configuration is expected", () => {

@@ -16,6 +16,33 @@ export type HotelTransferLog = {
   valueRaw: bigint;
 };
 
+export type CheckedInLog = {
+  kind: "CheckedIn";
+  txHash: Hex;
+  logIndex: number;
+  blockNumber: bigint;
+  blockHash: Hex;
+  guest: AddressHex;
+  amount: bigint;
+  checkInTimestamp: number;
+  unlockTimestamp: number;
+  nonce: bigint;
+  eligibilitySignerEpoch: bigint;
+};
+
+export type CheckedOutLog = {
+  kind: "CheckedOut";
+  txHash: Hex;
+  logIndex: number;
+  blockNumber: bigint;
+  blockHash: Hex;
+  guest: AddressHex;
+  amount: bigint;
+  checkOutTimestamp: number;
+};
+
+export type CheckInStayLog = CheckedInLog | CheckedOutLog;
+
 export type GetLogsRange = {
   address: AddressHex;
   fromBlock: bigint;
@@ -31,6 +58,12 @@ export interface ChainReader {
 
   /** ERC-20 Transfer logs in [fromBlock, toBlock] inclusive. Never mempool. */
   getTransferLogs(range: GetLogsRange): Promise<HotelTransferLog[]>;
+
+  /**
+   * RoomService CheckedIn / CheckedOut logs in range.
+   * Optional for transfer-only mocks; production readers implement this.
+   */
+  getCheckInLogs?(range: GetLogsRange): Promise<CheckInStayLog[]>;
 
   /**
    * eth_getCode(wallet, snapshotBlock).

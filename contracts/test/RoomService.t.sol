@@ -10,12 +10,14 @@ import {ReentrantClaimAttacker} from "./mocks/ReentrantClaimAttacker.sol";
 
 contract RoomServiceTest is Test {
     uint256 internal constant SIGNER_PK = 0xA11CE;
+    uint256 internal constant ELIGIBILITY_SIGNER_PK = 0xC1A11;
     uint256 internal constant WRONG_SIGNER_PK = 0xB0B;
     uint256 internal constant OWNER_PK = 0xA01;
 
     address internal hotelToken;
     address internal owner;
     address internal entitlementSigner;
+    address internal eligibilitySigner;
     address internal guest;
     address internal stranger;
 
@@ -26,13 +28,16 @@ contract RoomServiceTest is Test {
         hotelToken = makeAddr("hotelToken");
         owner = vm.addr(OWNER_PK);
         entitlementSigner = vm.addr(SIGNER_PK);
+        eligibilitySigner = vm.addr(ELIGIBILITY_SIGNER_PK);
         guest = makeAddr("guest");
         stranger = makeAddr("stranger");
 
         escrow = new MockPonsFeeEscrow();
 
         vm.prank(owner);
-        roomService = new RoomService(hotelToken, address(escrow), owner, entitlementSigner);
+        roomService = new RoomService(
+            hotelToken, address(escrow), owner, entitlementSigner, eligibilitySigner
+        );
     }
 
     /* ----------------------------- constructor / immutables ----------------------------- */
@@ -43,27 +48,35 @@ contract RoomServiceTest is Test {
         assertEq(roomService.owner(), owner);
         assertEq(roomService.entitlementSigner(), entitlementSigner);
         assertEq(roomService.signerEpoch(), 1);
+        assertEq(roomService.eligibilitySigner(), eligibilitySigner);
+        assertEq(roomService.eligibilitySignerEpoch(), 1);
         assertEq(roomService.totalRoomServiceClaimed(), 0);
+        assertEq(roomService.CHECK_IN_DURATION(), 3600);
     }
 
     function test_constructor_revertsOnZeroHotelToken() public {
         vm.expectRevert(RoomService.ZeroAddress.selector);
-        new RoomService(address(0), address(escrow), owner, entitlementSigner);
+        new RoomService(address(0), address(escrow), owner, entitlementSigner, eligibilitySigner);
     }
 
     function test_constructor_revertsOnZeroEscrow() public {
         vm.expectRevert(RoomService.ZeroAddress.selector);
-        new RoomService(hotelToken, address(0), owner, entitlementSigner);
+        new RoomService(hotelToken, address(0), owner, entitlementSigner, eligibilitySigner);
     }
 
     function test_constructor_revertsOnZeroOwner() public {
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableInvalidOwner.selector, address(0)));
-        new RoomService(hotelToken, address(escrow), address(0), entitlementSigner);
+        new RoomService(hotelToken, address(escrow), address(0), entitlementSigner, eligibilitySigner);
     }
 
     function test_constructor_revertsOnZeroSigner() public {
         vm.expectRevert(RoomService.ZeroAddress.selector);
-        new RoomService(hotelToken, address(escrow), owner, address(0));
+        new RoomService(hotelToken, address(escrow), owner, address(0), eligibilitySigner);
+    }
+
+    function test_constructor_revertsOnZeroEligibilitySigner() public {
+        vm.expectRevert(RoomService.ZeroAddress.selector);
+        new RoomService(hotelToken, address(escrow), owner, entitlementSigner, address(0));
     }
 
     /* ----------------------------------- claims ----------------------------------- */

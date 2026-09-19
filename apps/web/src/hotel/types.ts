@@ -32,6 +32,17 @@ export type ActivityItem = {
   summary: string;
 };
 
+export type GuestCheckInView = {
+  walletHeldRaw: bigint;
+  unwithdrawnEscrowRaw: bigint;
+  effectiveBalanceRaw: bigint;
+  stayPhase: "none" | "active" | "expired";
+  checkInTimestamp: number | null;
+  unlockTimestamp: number | null;
+  rewardMultiplierBps: bigint;
+  hasUnwithdrawnStay: boolean;
+};
+
 export type GuestStayView =
   | { kind: "disconnected" }
   | { kind: "prelive" }
@@ -45,6 +56,7 @@ export type GuestStayView =
       additionalNeededRaw: bigint;
       targetRoom: number | null;
       claimableWei: bigint;
+      checkIn?: GuestCheckInView;
     }
   | {
       kind: "lobby";
@@ -54,11 +66,13 @@ export type GuestStayView =
       additionalNeededRaw: bigint | null;
       bestRoom: number | null;
       claimableWei: bigint;
+      checkIn?: GuestCheckInView;
     }
   | {
       kind: "not_checked_in";
       bestRoom: number | null;
       claimableWei: bigint;
+      checkIn?: GuestCheckInView;
     };
 
 export type MarketStrip = {
@@ -83,6 +97,9 @@ export type HotelSnapshot = {
   stay: GuestStayView;
   activity: ActivityItem[];
   market: MarketStrip;
+  /** Top-100 guests with an active (pre-unlock) unwithdrawn stay. */
+  activeCheckedInTop100Count: number;
+  checkInEnabled: boolean;
 };
 
 export type HotelMode = "production" | "fixture";

@@ -54,6 +54,88 @@ button {
   color: var(--hotel-gold-soft);
 }
 
+.hotel-checkin-metric {
+  margin: 8px 4px 0;
+  padding: 8px 14px;
+  text-align: center;
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  color: var(--hotel-stone);
+}
+
+.hotel-checkin {
+  margin: 0 20px 16px;
+  padding: 14px 0 0;
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid color-mix(in oklab, var(--hotel-line) 60%, transparent);
+}
+
+.hotel-checkin__status {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  color: var(--hotel-gold-soft);
+}
+
+.hotel-checkin__lock,
+.hotel-checkin__countdown {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--hotel-cream);
+}
+
+.hotel-checkin__boost {
+  margin: 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  color: var(--hotel-gold);
+}
+
+.hotel-checkin__paused {
+  margin: 0;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  line-height: 1.45;
+  color: var(--hotel-muted);
+}
+
+.hotel-checkin__label {
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--hotel-muted);
+}
+
+.hotel-checkin__input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--hotel-line);
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--hotel-panel) 88%, transparent);
+  color: var(--hotel-cream);
+  font-size: 0.95rem;
+}
+
+.hotel-checkin__hint {
+  margin: 0;
+  font-size: 0.68rem;
+  color: var(--hotel-muted);
+}
+
+.hotel-checkin__actions {
+  display: grid;
+  gap: 8px;
+}
+
+.hotel-checkin__note {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--hotel-muted);
+}
+
 :root {
   --radius: 0.25rem;
 

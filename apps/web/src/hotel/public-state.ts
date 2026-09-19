@@ -1,10 +1,18 @@
+import { hotelConfigFromEnv } from "@hotel100/config";
 import {
   type Address,
   BURN_ADDRESSES,
+  countsTowardCheckedInMetric,
+  currentRewardMultiplierBps,
+  effectiveHotelBalance,
+  escrowCoherentWithRoomServiceBalance,
   findRankHundredHolder,
+  HOTEL_CHAIN_ID,
   HOTEL_ROOM_COUNT,
+  holdersWithEffectiveEscrowBalance,
   isExactServiceBoundary,
   isPublicStateStale,
+  isTopHundredRank,
   LIVE_CANARY_STATUS,
   nextServiceBoundaryStrictlyAfter,
   normalizeAddress,
@@ -14,7 +22,13 @@ import {
   type RankedHolder,
   rankEligibleHolders,
   roomAssignmentForRank,
+  type StayBoostPhase,
+  stayBoostPhase,
+  type UnwithdrawnEscrow,
+  ZERO_ADDRESS,
 } from "@hotel100/domain";
+import { createPublicClient, getAddress, http } from "viem";
+import { isEmptyCode } from "../check-in/chain";
 import { EntitlementError } from "../entitlement/errors";
 import { entitlementJson } from "../entitlement/headers";
 import { createPgSqlExecutor, requireDatabaseUrl } from "../entitlement/production";
@@ -35,6 +49,7 @@ import {
 import {
   emptyPublicMarket,
   PUBLIC_LOBBY_LIMIT,
+  type PublicConnectedCheckInDto,
   type PublicHotelStateDto,
   type PublicLobbyDto,
   type PublicRoomDto,
@@ -79,25 +94,46 @@ type ActivityRow = {
   payload: unknown;
   occurred_at: Date | string;
 };
+type EscrowRow = {
+  guest_address: string;
+  amount_raw: string;
+  check_in_timestamp: string | number;
+  unlock_timestamp: string | number;
+};
 
 type StayInfo = {
   checkedInSinceMs: number | null;
   bestRoomEver: number | null;
 };
 
+type EscrowInfo = {
+  amountRaw: bigint;
+  checkInTimestamp: number;
+  unlockTimestamp: number;
+};
+
+/** Optional eth_getCode reader for live Top 100 EOA filtering. */
+export type PublicCodeReader = {
+  getCode(address: Address): Promise<string>;
+};
+
 /**
  * Read-only canonical hotel state.
- * Ranking is `rankEligibleHolders` + `roomAssignmentForRank` from @hotel100/domain.
- * Occupancy is withheld when the index is stale or not current.
- * Tables read: system_state, holders, excluded_addresses, guest_stays, room_history,
- * guest_entitlements, room_service_claims (confirmed tx only), public_activity,
- * hotel_deployment (token address only).
- * Not read: auth_nonces, operational_incidents, worker_write_audit, signer keys.
+ * Ranking uses effective balance (wallet-held + unwithdrawn escrow).
+ * Live ranking filters contract wallets via eth_getCode (EOA only).
+ * Occupancy is withheld when the index is stale, incoherent, not current,
+ * or when a live hotel lacks a code reader.
  */
 export async function readCanonicalHotelState(
   sql: SqlExecutor,
-  args: { nowMs: number; wallet: Address | null },
+  args: {
+    nowMs: number;
+    wallet: Address | null;
+    checkInEnabled?: boolean;
+    getCode?: PublicCodeReader["getCode"];
+  },
 ): Promise<PublicHotelStateDto> {
+  const checkInEnabled = args.checkInEnabled === true;
   const nowSeconds = Math.max(0, Math.floor(args.nowMs / 1000));
   const nextServiceBoundaryUnixSeconds = isExactServiceBoundary(nowSeconds)
     ? nowSeconds
@@ -173,7 +209,49 @@ export async function readCanonicalHotelState(
     });
   }
 
-  const ranked = await readRankedHolders(sql);
+  const roomServiceAddress = await readRoomServiceAddress(sql);
+  const coherence = await readEscrowCoherence(sql, roomServiceAddress);
+  if (!coherence) {
+    return withheldState({
+      nowMs: args.nowMs,
+      wallet: args.wallet,
+      hotelLive: true,
+      syncing: true,
+      canaryPending,
+      publicStatus: PUBLIC_STATUS.SYNCING,
+      lastIndexedBlock,
+      lastIndexedAtMs,
+      roomServiceDelayed: false,
+      ...serviceClock,
+      marketContract,
+      activity,
+    });
+  }
+
+  // Live Top 100 must not skip EOA checks — fail closed without eth_getCode.
+  if (!args.getCode) {
+    return withheldState({
+      nowMs: args.nowMs,
+      wallet: args.wallet,
+      hotelLive: true,
+      syncing: true,
+      canaryPending,
+      publicStatus: PUBLIC_STATUS.SYNCING,
+      lastIndexedBlock,
+      lastIndexedAtMs,
+      roomServiceDelayed: false,
+      ...serviceClock,
+      marketContract,
+      activity,
+    });
+  }
+
+  const { ranked, escrowByGuest } = await readRankedHolders(
+    sql,
+    roomServiceAddress,
+    nowSeconds,
+    args.getCode,
+  );
   const stays = await readStayInfo(sql);
   const door = findRankHundredHolder(ranked);
   const rooms = roomsFromRanked(ranked, stays);
@@ -184,7 +262,10 @@ export async function readCanonicalHotelState(
     ranked,
     stays,
     rooms,
+    escrowByGuest,
+    nowSeconds,
   });
+  const activeCheckedInTop100Count = countActiveCheckedInTop100(ranked, escrowByGuest, nowSeconds);
 
   return {
     fixturePreview: false,
@@ -198,6 +279,8 @@ export async function readCanonicalHotelState(
     roomServiceDelayed: delayed,
     ...serviceClock,
     room100ThresholdRaw: door ? door.balanceRaw.toString() : null,
+    activeCheckedInTop100Count,
+    checkInEnabled,
     connectedWallet: args.wallet,
     rooms,
     lobby,
@@ -214,7 +297,11 @@ export async function readCanonicalHotelState(
 export async function handlePublicHotelState(
   request: Request,
   env: Record<string, string | undefined>,
-  deps: { sql?: SqlExecutor; nowMs?: number } = {},
+  deps: {
+    sql?: SqlExecutor;
+    nowMs?: number;
+    getCode?: PublicCodeReader["getCode"];
+  } = {},
 ): Promise<Response> {
   const allowed = entitlementTransportAllowed({
     mode: transportModeFromEnv(env.NODE_ENV),
@@ -246,14 +333,36 @@ export async function handlePublicHotelState(
   }
 
   try {
+    const config = hotelConfigFromEnv(env);
+    const getCode = deps.getCode ?? (config.rpcUrl ? createRpcGetCode(config.rpcUrl) : undefined);
     const state = await readCanonicalHotelState(sql, {
       nowMs: deps.nowMs ?? Date.now(),
       wallet,
+      checkInEnabled: config.hotelCheckInEnabled,
+      getCode,
     });
     return entitlementJson(200, state);
   } catch {
     return entitlementJson(503, { error: "state_unavailable" });
   }
+}
+
+/** Viem public client getCode for live ranking (chain id 4663). Read-only. */
+function createRpcGetCode(rpcUrl: string): PublicCodeReader["getCode"] {
+  const url = rpcUrl.trim();
+  const client = createPublicClient({
+    chain: {
+      id: HOTEL_CHAIN_ID,
+      name: "Robinhood Chain",
+      nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+      rpcUrls: { default: { http: [url] } },
+    },
+    transport: http(url),
+  });
+  return async (address) => {
+    const code = await client.getCode({ address: getAddress(address) });
+    return code ?? "0x";
+  };
 }
 
 function indexIsCurrent(args: {
@@ -277,24 +386,120 @@ function indexIsCurrent(args: {
   return true;
 }
 
-async function readRankedHolders(sql: SqlExecutor): Promise<RankedHolder[]> {
-  const [holders, excluded] = await Promise.all([
+/**
+ * Public ranking exclusions: burns + excluded_addresses + RoomService from deployment.
+ * Live ranking also filters contracts via eth_getCode (see filterEoaHolders).
+ */
+export async function buildPublicExclusionSet(
+  sql: SqlExecutor,
+  roomServiceAddress: Address | null,
+): Promise<Set<string>> {
+  const blocked = new Set<string>([...BURN_ADDRESSES, ZERO_ADDRESS]);
+  if (roomServiceAddress) blocked.add(normalizeAddress(roomServiceAddress));
+  const excluded = await sql.query<{ address: string }>(`SELECT address FROM excluded_addresses`);
+  for (const row of excluded.rows) blocked.add(normalizeAddress(row.address));
+  return blocked;
+}
+
+async function filterEoaHolders(
+  holders: Array<{ address: Address; balanceRaw: bigint }>,
+  getCode: PublicCodeReader["getCode"],
+): Promise<Array<{ address: Address; balanceRaw: bigint }>> {
+  const out: Array<{ address: Address; balanceRaw: bigint }> = [];
+  for (const holder of holders) {
+    const code = await getCode(holder.address);
+    if (isEmptyCode(code)) out.push(holder);
+  }
+  return out;
+}
+
+async function readRankedHolders(
+  sql: SqlExecutor,
+  roomServiceAddress: Address | null,
+  _nowSeconds: number,
+  getCode: PublicCodeReader["getCode"],
+): Promise<{ ranked: RankedHolder[]; escrowByGuest: Map<string, EscrowInfo> }> {
+  const [holders, blocked, escrowRows] = await Promise.all([
     sql.query<HolderRow>(
       `SELECT address, balance_raw::text AS balance_raw
          FROM holders
         WHERE balance_raw > 0`,
     ),
-    sql.query<{ address: string }>(`SELECT address FROM excluded_addresses`),
+    buildPublicExclusionSet(sql, roomServiceAddress),
+    sql.query<EscrowRow>(
+      `SELECT guest_address, amount_raw::text AS amount_raw,
+              check_in_timestamp, unlock_timestamp
+         FROM check_in_positions
+        WHERE withdrawn_at IS NULL`,
+    ),
   ]);
-  const blocked = new Set<string>(BURN_ADDRESSES);
-  for (const row of excluded.rows) blocked.add(normalizeAddress(row.address));
-  const eligible = holders.rows
-    .map((row) => ({
+
+  const escrowByGuest = new Map<string, EscrowInfo>();
+  const escrows: UnwithdrawnEscrow[] = [];
+  for (const row of escrowRows.rows) {
+    const guest = normalizeAddress(row.guest_address);
+    const info: EscrowInfo = {
+      amountRaw: BigInt(row.amount_raw),
+      checkInTimestamp: Number(row.check_in_timestamp),
+      unlockTimestamp: Number(row.unlock_timestamp),
+    };
+    escrowByGuest.set(guest, info);
+    escrows.push({
+      guestAddress: guest,
+      amountRaw: info.amountRaw,
+      checkInTimestamp: info.checkInTimestamp,
+      unlockTimestamp: info.unlockTimestamp,
+    });
+  }
+
+  const withEffective = holdersWithEffectiveEscrowBalance({
+    walletHolders: holders.rows.map((row) => ({
       address: normalizeAddress(row.address),
       balanceRaw: BigInt(row.balance_raw),
-    }))
-    .filter((holder) => holder.balanceRaw > 0n && !blocked.has(holder.address));
-  return rankEligibleHolders(eligible);
+    })),
+    escrows,
+    excludedAddresses: blocked,
+  });
+  const eoaOnly = await filterEoaHolders(withEffective, getCode);
+  return { ranked: rankEligibleHolders(eoaOnly), escrowByGuest };
+}
+
+async function readEscrowCoherence(
+  sql: SqlExecutor,
+  roomServiceAddress: Address | null,
+): Promise<boolean> {
+  if (!roomServiceAddress) return true;
+  const [escrow, holder] = await Promise.all([
+    sql.query<{ total: string }>(
+      `SELECT COALESCE(SUM(amount_raw), 0)::text AS total
+       FROM check_in_positions WHERE withdrawn_at IS NULL`,
+    ),
+    sql.query<{ balance_raw: string }>(
+      `SELECT balance_raw::text AS balance_raw FROM holders WHERE address = $1`,
+      [roomServiceAddress],
+    ),
+  ]);
+  return escrowCoherentWithRoomServiceBalance({
+    unwithdrawnEscrowTotal: BigInt(escrow.rows[0]?.total ?? "0"),
+    roomServiceBalanceRaw: BigInt(holder.rows[0]?.balance_raw ?? "0"),
+  });
+}
+
+async function readRoomServiceAddress(sql: SqlExecutor): Promise<Address | null> {
+  const result = await sql.query<{ room_service_address: string | null }>(
+    `SELECT room_service_address
+       FROM hotel_deployment
+      WHERE room_service_address IS NOT NULL
+      ORDER BY updated_at DESC
+      LIMIT 1`,
+  );
+  const address = result.rows[0]?.room_service_address;
+  if (!address) return null;
+  try {
+    return normalizeAddress(address);
+  } catch {
+    return null;
+  }
 }
 
 async function readStayInfo(sql: SqlExecutor): Promise<Map<string, StayInfo>> {
@@ -378,12 +583,33 @@ function lobbyFromRanked(ranked: RankedHolder[]): PublicLobbyDto[] {
   return lobby;
 }
 
+function countActiveCheckedInTop100(
+  ranked: RankedHolder[],
+  escrowByGuest: Map<string, EscrowInfo>,
+  nowSeconds: number,
+): number {
+  let count = 0;
+  for (const holder of ranked) {
+    if (!isTopHundredRank(holder.rank)) continue;
+    const esc = escrowByGuest.get(holder.address);
+    const phase = stayBoostPhase({
+      hasUnwithdrawnStay: Boolean(esc),
+      unlockTimestamp: esc?.unlockTimestamp ?? 0,
+      snapshotTimestamp: nowSeconds,
+    });
+    if (countsTowardCheckedInMetric({ isTop100: true, stayPhase: phase })) count += 1;
+  }
+  return count;
+}
+
 async function stayForWallet(args: {
   sql: SqlExecutor;
   wallet: Address | null;
   ranked: RankedHolder[];
   stays: Map<string, StayInfo>;
   rooms: PublicRoomDto[];
+  escrowByGuest: Map<string, EscrowInfo>;
+  nowSeconds: number;
 }): Promise<PublicStayDto> {
   if (!args.wallet) return { kind: "disconnected" };
   const holder = args.ranked.find((row) => row.address === args.wallet);
@@ -391,6 +617,15 @@ async function stayForWallet(args: {
   const claimableWei = await indexedClaimableWei(args.sql, args.wallet);
   const info = args.stays.get(args.wallet);
   const slots = toRoomSlots(args.rooms);
+  const walletHeld = await readWalletHeld(args.sql, args.wallet);
+  const checkIn = connectedCheckInDto({
+    wallet: args.wallet,
+    walletHeld,
+    ranked: args.ranked,
+    escrowByGuest: args.escrowByGuest,
+    nowSeconds: args.nowSeconds,
+  });
+
   if ((assignment.kind === "penthouse" || assignment.kind === "room") && holder) {
     const stay = presentCheckedInStay({
       room: assignment.room,
@@ -412,6 +647,7 @@ async function stayForWallet(args: {
       additionalNeededRaw: stay.additionalNeededRaw.toString(),
       targetRoom: stay.targetRoom,
       claimableWei: stay.claimableWei.toString(),
+      checkIn,
     };
   }
   if (assignment.kind === "lobby" && holder) {
@@ -433,13 +669,51 @@ async function stayForWallet(args: {
         stay.additionalNeededRaw === null ? null : stay.additionalNeededRaw.toString(),
       bestRoom: stay.bestRoom,
       claimableWei: stay.claimableWei.toString(),
+      checkIn,
     };
   }
   return {
     kind: "not_checked_in",
     bestRoom: info?.bestRoomEver ?? null,
     claimableWei: claimableWei.toString(),
+    checkIn,
   };
+}
+
+function connectedCheckInDto(args: {
+  wallet: Address;
+  walletHeld: bigint;
+  ranked: RankedHolder[];
+  escrowByGuest: Map<string, EscrowInfo>;
+  nowSeconds: number;
+}): PublicConnectedCheckInDto {
+  const holder = args.ranked.find((row) => row.address === args.wallet);
+  const isTop100 = holder ? isTopHundredRank(holder.rank) : false;
+  const esc = args.escrowByGuest.get(args.wallet);
+  const phase: StayBoostPhase = stayBoostPhase({
+    hasUnwithdrawnStay: Boolean(esc),
+    unlockTimestamp: esc?.unlockTimestamp ?? 0,
+    snapshotTimestamp: args.nowSeconds,
+  });
+  const escrowAmount = esc?.amountRaw ?? 0n;
+  return {
+    walletHeldRaw: args.walletHeld.toString(),
+    unwithdrawnEscrowRaw: escrowAmount.toString(),
+    effectiveBalanceRaw: effectiveHotelBalance(args.walletHeld, escrowAmount).toString(),
+    stayPhase: phase,
+    checkInTimestamp: esc?.checkInTimestamp ?? null,
+    unlockTimestamp: esc?.unlockTimestamp ?? null,
+    rewardMultiplierBps: currentRewardMultiplierBps({ isTop100, stayPhase: phase }).toString(),
+    hasUnwithdrawnStay: Boolean(esc),
+  };
+}
+
+async function readWalletHeld(sql: SqlExecutor, wallet: Address): Promise<bigint> {
+  const { rows } = await sql.query<{ balance_raw: string }>(
+    `SELECT balance_raw::text AS balance_raw FROM holders WHERE address = $1`,
+    [wallet],
+  );
+  return rows[0] ? BigInt(rows[0].balance_raw) : 0n;
 }
 
 async function indexedClaimableWei(sql: SqlExecutor, wallet: Address): Promise<bigint> {
@@ -539,6 +813,8 @@ function withheldState(args: {
     nextServiceBoundaryUnixSeconds: args.nextServiceBoundaryUnixSeconds,
     secondsUntilNextService: args.secondsUntilNextService,
     room100ThresholdRaw: null,
+    activeCheckedInTop100Count: 0,
+    checkInEnabled: false,
     connectedWallet: args.syncing ? null : args.wallet,
     rooms: emptyRooms().map((slot) => ({
       room: slot.room,

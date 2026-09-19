@@ -1,4 +1,11 @@
-import type { AddressHex, ChainReader, GetLogsRange, Hex, HotelTransferLog } from "../rpc/types.js";
+import type {
+  AddressHex,
+  ChainReader,
+  CheckInStayLog,
+  GetLogsRange,
+  Hex,
+  HotelTransferLog,
+} from "./types.js";
 
 export type MockBlock = {
   number: bigint;
@@ -13,6 +20,8 @@ export class MockChainReader implements ChainReader {
   blocks = new Map<string, Hex>();
   /** blockNumber → transfers */
   transfersByBlock = new Map<string, HotelTransferLog[]>();
+  /** blockNumber → check-in stay logs */
+  checkInByBlock = new Map<string, CheckInStayLog[]>();
   /** address → blockNumber → code */
   codes = new Map<string, Map<string, Hex>>();
 
@@ -48,6 +57,13 @@ export class MockChainReader implements ChainReader {
     this.transfersByBlock.set(key, list);
   }
 
+  addCheckInLog(log: CheckInStayLog): void {
+    const key = log.blockNumber.toString();
+    const list = this.checkInByBlock.get(key) ?? [];
+    list.push(log);
+    this.checkInByBlock.set(key, list);
+  }
+
   async getLatestBlockNumber(): Promise<bigint> {
     return this.latest;
   }
@@ -72,6 +88,18 @@ export class MockChainReader implements ChainReader {
       }
     }
     return out;
+  }
+
+  async getCheckInLogs(range: GetLogsRange): Promise<CheckInStayLog[]> {
+    const out: CheckInStayLog[] = [];
+    for (let b = range.fromBlock; b <= range.toBlock; b++) {
+      const list = this.checkInByBlock.get(b.toString()) ?? [];
+      out.push(...list);
+    }
+    return out.sort((a, b) => {
+      if (a.blockNumber !== b.blockNumber) return a.blockNumber < b.blockNumber ? -1 : 1;
+      return a.logIndex - b.logIndex;
+    });
   }
 
   async getCode(address: AddressHex, blockNumber: bigint): Promise<Hex> {

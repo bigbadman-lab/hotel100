@@ -6,10 +6,24 @@ import {
   type PublicClient,
   parseAbiItem,
 } from "viem";
-import type { AddressHex, ChainReader, GetLogsRange, HotelTransferLog } from "./types.js";
+import type {
+  AddressHex,
+  ChainReader,
+  CheckInStayLog,
+  GetLogsRange,
+  HotelTransferLog,
+} from "./types.js";
 
 const TRANSFER_EVENT = parseAbiItem(
   "event Transfer(address indexed from, address indexed to, uint256 value)",
+);
+
+const CHECKED_IN_EVENT = parseAbiItem(
+  "event CheckedIn(address indexed guest, uint256 amount, uint64 checkInTimestamp, uint64 unlockTimestamp, uint256 nonce, uint256 eligibilitySignerEpoch)",
+);
+
+const CHECKED_OUT_EVENT = parseAbiItem(
+  "event CheckedOut(address indexed guest, uint256 amount, uint64 checkOutTimestamp)",
 );
 
 /**
@@ -73,6 +87,94 @@ export function createViemChainReader(args: { rpcUrl: string; chainId: number })
           to: to.toLowerCase() as AddressHex,
           valueRaw: value,
         };
+      });
+    },
+
+    async getCheckInLogs(range: GetLogsRange) {
+      const [checkedIn, checkedOut] = await Promise.all([
+        client.getLogs({
+          address: range.address as Address,
+          event: CHECKED_IN_EVENT,
+          fromBlock: range.fromBlock,
+          toBlock: range.toBlock,
+        }),
+        client.getLogs({
+          address: range.address as Address,
+          event: CHECKED_OUT_EVENT,
+          fromBlock: range.fromBlock,
+          toBlock: range.toBlock,
+        }),
+      ]);
+
+      const out: CheckInStayLog[] = [];
+      for (const log of checkedIn) {
+        if (
+          log.blockNumber === null ||
+          log.logIndex === null ||
+          !log.blockHash ||
+          !log.transactionHash
+        ) {
+          throw new Error("CheckedIn log missing block/tx identity");
+        }
+        const guest = log.args.guest;
+        const amount = log.args.amount;
+        const checkInTimestamp = log.args.checkInTimestamp;
+        const unlockTimestamp = log.args.unlockTimestamp;
+        const nonce = log.args.nonce;
+        const eligibilitySignerEpoch = log.args.eligibilitySignerEpoch;
+        if (
+          guest === undefined ||
+          amount === undefined ||
+          checkInTimestamp === undefined ||
+          unlockTimestamp === undefined ||
+          nonce === undefined ||
+          eligibilitySignerEpoch === undefined
+        ) {
+          throw new Error("CheckedIn log missing args");
+        }
+        out.push({
+          kind: "CheckedIn",
+          txHash: log.transactionHash as Hex,
+          logIndex: log.logIndex,
+          blockNumber: log.blockNumber,
+          blockHash: log.blockHash as Hex,
+          guest: guest.toLowerCase() as AddressHex,
+          amount,
+          checkInTimestamp: Number(checkInTimestamp),
+          unlockTimestamp: Number(unlockTimestamp),
+          nonce,
+          eligibilitySignerEpoch,
+        });
+      }
+      for (const log of checkedOut) {
+        if (
+          log.blockNumber === null ||
+          log.logIndex === null ||
+          !log.blockHash ||
+          !log.transactionHash
+        ) {
+          throw new Error("CheckedOut log missing block/tx identity");
+        }
+        const guest = log.args.guest;
+        const amount = log.args.amount;
+        const checkOutTimestamp = log.args.checkOutTimestamp;
+        if (guest === undefined || amount === undefined || checkOutTimestamp === undefined) {
+          throw new Error("CheckedOut log missing args");
+        }
+        out.push({
+          kind: "CheckedOut",
+          txHash: log.transactionHash as Hex,
+          logIndex: log.logIndex,
+          blockNumber: log.blockNumber,
+          blockHash: log.blockHash as Hex,
+          guest: guest.toLowerCase() as AddressHex,
+          amount,
+          checkOutTimestamp: Number(checkOutTimestamp),
+        });
+      }
+      return out.sort((a, b) => {
+        if (a.blockNumber !== b.blockNumber) return a.blockNumber < b.blockNumber ? -1 : 1;
+        return a.logIndex - b.logIndex;
       });
     },
 

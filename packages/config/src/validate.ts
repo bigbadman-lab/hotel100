@@ -111,6 +111,74 @@ export function validateProductionWallets(input: {
 }
 
 /**
+ * Eligibility signer is optional unless check-in is enabled.
+ * When present (or required), it must be distinct from deployer, entitlement signer, and worker writer.
+ */
+export function validateEligibilitySigner(input: {
+  eligibilitySignerAddress: string;
+  deployerOwnerAddress?: string;
+  entitlementSignerAddress?: string;
+  workerWriterAddress?: string;
+}):
+  | { ok: true; eligibilitySignerAddress: Address }
+  | { ok: false; issues: ConfigValidationIssue[] } {
+  const issues: ConfigValidationIssue[] = [];
+  let eligibility: Address | undefined;
+  try {
+    eligibility = normalizeAddress(input.eligibilitySignerAddress);
+  } catch {
+    issues.push({
+      code: "INVALID_ADDRESS",
+      message: "Eligibility signer address is invalid",
+      key: "HOTEL_ELIGIBILITY_SIGNER_ADDRESS",
+    });
+    return { ok: false, issues };
+  }
+
+  if (isZeroAddress(eligibility)) {
+    issues.push({
+      code: "ZERO_ADDRESS",
+      message: "Eligibility signer cannot be the zero address",
+      key: "HOTEL_ELIGIBILITY_SIGNER_ADDRESS",
+    });
+  }
+
+  const collisions: Array<{ value?: string; code: string; message: string; key: string }> = [
+    {
+      value: input.deployerOwnerAddress,
+      code: "ROLE_COLLISION",
+      message: "Eligibility signer must be distinct from deployer/owner",
+      key: "HOTEL_ELIGIBILITY_SIGNER_ADDRESS",
+    },
+    {
+      value: input.entitlementSignerAddress,
+      code: "ROLE_COLLISION",
+      message: "Eligibility signer must be distinct from entitlement signer",
+      key: "HOTEL_ELIGIBILITY_SIGNER_ADDRESS",
+    },
+    {
+      value: input.workerWriterAddress,
+      code: "ROLE_COLLISION",
+      message: "Eligibility signer must be distinct from worker writer",
+      key: "HOTEL_ELIGIBILITY_SIGNER_ADDRESS",
+    },
+  ];
+  for (const row of collisions) {
+    if (!row.value) continue;
+    try {
+      if (normalizeAddress(row.value) === eligibility) {
+        issues.push({ code: row.code, message: row.message, key: row.key });
+      }
+    } catch {
+      // Other role validity is reported elsewhere.
+    }
+  }
+
+  if (issues.length > 0) return { ok: false, issues };
+  return { ok: true, eligibilitySignerAddress: eligibility };
+}
+
+/**
  * Validate a production-bound config object.
  * Does not invent missing values — reports them as issues.
  */
@@ -167,6 +235,32 @@ export function validateProductionConfig(config: HotelConfig): ConfigValidationR
     }
   }
 
+  if (config.hotelCheckInEnabled) {
+    if (!config.eligibilitySignerAddress) {
+      issues.push({
+        code: "UNRESOLVED_INPUT",
+        message: "HOTEL_ELIGIBILITY_SIGNER_ADDRESS is required when HOTEL_CHECKIN_ENABLED=true",
+        key: "HOTEL_ELIGIBILITY_SIGNER_ADDRESS",
+      });
+    } else {
+      const eligibility = validateEligibilitySigner({
+        eligibilitySignerAddress: config.eligibilitySignerAddress,
+        deployerOwnerAddress: config.deployerOwnerAddress,
+        entitlementSignerAddress: config.entitlementSignerAddress,
+        workerWriterAddress: config.workerWriterAddress,
+      });
+      if (!eligibility.ok) issues.push(...eligibility.issues);
+    }
+  } else if (config.eligibilitySignerAddress) {
+    const eligibility = validateEligibilitySigner({
+      eligibilitySignerAddress: config.eligibilitySignerAddress,
+      deployerOwnerAddress: config.deployerOwnerAddress,
+      entitlementSignerAddress: config.entitlementSignerAddress,
+      workerWriterAddress: config.workerWriterAddress,
+    });
+    if (!eligibility.ok) issues.push(...eligibility.issues);
+  }
+
   if (
     config.deployerOwnerAddress &&
     config.entitlementSignerAddress &&
@@ -200,6 +294,12 @@ export function hotelConfigFromEnv(env: Record<string, string | undefined>): Hot
       ? base.hotelLive
       : hotelLiveRaw === "true" || hotelLiveRaw === "1";
 
+  const checkInRaw = env.HOTEL_CHECKIN_ENABLED;
+  const hotelCheckInEnabled =
+    checkInRaw === undefined || checkInRaw === ""
+      ? base.hotelCheckInEnabled
+      : checkInRaw === "true" || checkInRaw === "1";
+
   const chainIdRaw = env.HOTEL_CHAIN_ID;
   const chainId =
     chainIdRaw === undefined || chainIdRaw === "" ? HOTEL_CHAIN_ID : Number(chainIdRaw);
@@ -211,6 +311,7 @@ export function hotelConfigFromEnv(env: Record<string, string | undefined>): Hot
   return {
     ...base,
     hotelLive,
+    hotelCheckInEnabled,
     chainId: HOTEL_CHAIN_ID,
     rpcUrl: emptyToUndefined(env.HOTEL_RPC_URL),
     domain: emptyToUndefined(env.HOTEL_DOMAIN),
@@ -237,6 +338,10 @@ export function hotelConfigFromEnv(env: Record<string, string | undefined>): Hot
     entitlementSignerAddress: parseOptionalAddress(
       env.HOTEL_ENTITLEMENT_SIGNER_ADDRESS,
       "HOTEL_ENTITLEMENT_SIGNER_ADDRESS",
+    ),
+    eligibilitySignerAddress: parseOptionalAddress(
+      env.HOTEL_ELIGIBILITY_SIGNER_ADDRESS,
+      "HOTEL_ELIGIBILITY_SIGNER_ADDRESS",
     ),
     workerWriterAddress: parseOptionalAddress(
       env.HOTEL_WORKER_WRITER_ADDRESS,

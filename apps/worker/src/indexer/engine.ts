@@ -1,7 +1,15 @@
 import { LIVE_CONFIRMATIONS, PUBLIC_STATUS } from "@hotel100/domain";
+import {
+  assertEscrowCoherence,
+  deleteCheckInEventsAtOrAfter,
+  ingestCheckInEvent,
+  loadUnwithdrawnEscrows,
+  toDomainEscrows,
+} from "../check-in/index.js";
 import { type ChainReader, indexableHead } from "../rpc/types.js";
 import { applyTransferToBalances, reconstructBalancesFromTransfers } from "./balances.js";
 import { computeLiveRanking } from "./ranking-state.js";
+import type { SqlExecutor } from "./sql.js";
 import { markSyncing, refreshStalePublicStatus } from "./stale.js";
 import {
   buildExclusionSet,
@@ -15,6 +23,7 @@ export type IndexerRunResult = {
   fromBlock: bigint | null;
   toBlock: bigint | null;
   transfersApplied: number;
+  checkInEventsApplied: number;
   gapDetected: boolean;
   reorgDetected: boolean;
   reconciled: boolean;
@@ -22,22 +31,30 @@ export type IndexerRunResult = {
   rankingCount: number;
 };
 
+export type HotelIndexerOptions = {
+  /** Required to persist CheckedIn / CheckedOut when RoomService is configured. */
+  db?: SqlExecutor;
+};
+
 /**
- * Core HOTEL indexer + reconciler (Gate E).
+ * Core HOTEL indexer + reconciler (Gate E) + check-in escrow ingest.
  * No Room Service finalization, no Pons collection writes.
  */
 export class HotelIndexer {
   private readonly exclusions: Set<string>;
+  private readonly db: SqlExecutor | undefined;
 
   constructor(
     private readonly reader: ChainReader,
     private readonly store: IndexerStore,
     private readonly config: HotelIndexerConfig,
+    options: HotelIndexerOptions = {},
   ) {
     if (config.hotelLaunchBlock < 0n) {
       throw new Error("hotelLaunchBlock must be >= 0");
     }
     this.exclusions = buildExclusionSet(config);
+    this.db = options.db;
   }
 
   getExclusions(): Set<string> {
@@ -75,6 +92,7 @@ export class HotelIndexer {
         fromBlock: null,
         toBlock: null,
         transfersApplied: 0,
+        checkInEventsApplied: 0,
         gapDetected: false,
         reorgDetected,
         reconciled: false,
@@ -95,6 +113,7 @@ export class HotelIndexer {
         fromBlock: null,
         toBlock: null,
         transfersApplied: 0,
+        checkInEventsApplied: 0,
         gapDetected: false,
         reorgDetected,
         reconciled: Boolean(opts.forceReconcile),
@@ -106,15 +125,20 @@ export class HotelIndexer {
     if (gapAt !== null) {
       await markSyncing(this.store, "INDEXING_GAP");
       const backfillTo = gapAt === fromBlock ? null : gapAt - 1n;
+      let checkInEventsApplied = 0;
+      let transfersApplied = 0;
       if (backfillTo !== null && backfillTo >= fromBlock) {
-        await this.indexRange(fromBlock, backfillTo, nowMs);
+        const ranged = await this.indexRange(fromBlock, backfillTo, nowMs);
+        transfersApplied = ranged.transfersApplied;
+        checkInEventsApplied = ranged.checkInEventsApplied;
       }
       await this.reconcile("gap");
       return this.finish(nowMs, {
         advanced: backfillTo !== null,
         fromBlock,
         toBlock: backfillTo,
-        transfersApplied: 0,
+        transfersApplied,
+        checkInEventsApplied,
         gapDetected: true,
         reorgDetected,
         reconciled: true,
@@ -122,7 +146,11 @@ export class HotelIndexer {
       });
     }
 
-    const { transfersApplied } = await this.indexRange(fromBlock, head, nowMs);
+    const { transfersApplied, checkInEventsApplied } = await this.indexRange(
+      fromBlock,
+      head,
+      nowMs,
+    );
 
     let reconciled = Boolean(opts.forceReconcile);
     if (opts.forceReconcile) {
@@ -142,6 +170,7 @@ export class HotelIndexer {
       fromBlock,
       toBlock: head,
       transfersApplied,
+      checkInEventsApplied,
       gapDetected: false,
       reorgDetected,
       reconciled,
@@ -214,11 +243,13 @@ export class HotelIndexer {
   }
 
   async liveRanking(snapshotBlock: bigint) {
+    const escrows = this.db ? toDomainEscrows(await loadUnwithdrawnEscrows(this.db)) : [];
     return computeLiveRanking({
       reader: this.reader,
       holders: await this.store.getAllHolders(),
       snapshotBlock,
       exclusions: this.exclusions,
+      escrows,
     });
   }
 
@@ -226,7 +257,7 @@ export class HotelIndexer {
     fromBlock: bigint,
     toBlock: bigint,
     nowMs: number,
-  ): Promise<{ transfersApplied: number }> {
+  ): Promise<{ transfersApplied: number; checkInEventsApplied: number }> {
     const logs = await this.reader.getTransferLogs({
       address: this.config.hotelTokenAddress,
       fromBlock,
@@ -258,6 +289,8 @@ export class HotelIndexer {
       void isPreOpen(this.config, log.blockNumber);
     }
 
+    const checkInEventsApplied = await this.indexCheckInRange(fromBlock, toBlock);
+
     const endHash = await this.reader.getBlockHash(toBlock);
     if (endHash === null) {
       await markSyncing(this.store, "INDEXING_GAP");
@@ -279,7 +312,31 @@ export class HotelIndexer {
       await this.store.setPublicStatus(PUBLIC_STATUS.CHECK_IN_OPENS_SOON);
     }
 
-    return { transfersApplied };
+    return { transfersApplied, checkInEventsApplied };
+  }
+
+  private async indexCheckInRange(fromBlock: bigint, toBlock: bigint): Promise<number> {
+    const roomService = this.config.roomServiceAddress;
+    if (!roomService || !this.db || !this.reader.getCheckInLogs) {
+      return 0;
+    }
+    const events = await this.reader.getCheckInLogs({
+      address: roomService,
+      fromBlock,
+      toBlock,
+    });
+    let applied = 0;
+    for (const event of events) {
+      try {
+        const result = await ingestCheckInEvent(this.db, event);
+        if (result.inserted) applied += 1;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await markSyncing(this.store, `CHECK_IN:${message}`);
+        throw error;
+      }
+    }
+    return applied;
   }
 
   private async findFirstMissingBlock(fromBlock: bigint, toBlock: bigint): Promise<bigint | null> {
@@ -307,6 +364,10 @@ export class HotelIndexer {
     await this.store.replaceBalances(rebuilt);
     await this.store.deleteTransfersAtOrAfter(fromBlockInclusive);
 
+    if (this.db) {
+      await deleteCheckInEventsAtOrAfter(this.db, fromBlockInclusive);
+    }
+
     const prev = fromBlockInclusive === 0n ? null : fromBlockInclusive - 1n;
     const prevHash = prev === null ? null : await this.reader.getBlockHash(prev);
     const cur = await this.store.getCursor();
@@ -324,6 +385,13 @@ export class HotelIndexer {
     nowMs: number,
     partial: Omit<IndexerRunResult, "publicStatus">,
   ): Promise<IndexerRunResult> {
+    if (this.db && this.config.roomServiceAddress) {
+      const coherence = await assertEscrowCoherence(this.db, this.config.roomServiceAddress);
+      if (!coherence.ok) {
+        await markSyncing(this.store, coherence.reason);
+      }
+    }
+
     const prior = await this.store.getPublicStatus();
     if (prior !== PUBLIC_STATUS.ROOM_SERVICE_DELAYED) {
       await refreshStalePublicStatus(this.store, nowMs, this.config.publicStaleThresholdMs);

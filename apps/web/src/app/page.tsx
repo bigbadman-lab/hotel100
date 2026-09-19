@@ -20,12 +20,14 @@ export default async function HomePage({
   });
   const scenario = parseScenario(params.stay);
   const roomServiceAddress = hotelConfigFromEnv(process.env).roomServiceAddress ?? null;
+  const hotelTokenAddress = hotelConfigFromEnv(process.env).tokenAddress ?? null;
   return (
     <HotelApp
       mode={mode}
       hotelLive={hotelLive}
       scenario={scenario}
       roomServiceAddress={roomServiceAddress}
+      hotelTokenAddress={hotelTokenAddress}
     />
   );
 }

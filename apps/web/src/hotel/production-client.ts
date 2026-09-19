@@ -29,6 +29,8 @@ export function failClosedProductionSnapshot(): HotelSnapshot {
       holders: null,
       contract: null,
     },
+    activeCheckedInTop100Count: 0,
+    checkInEnabled: false,
   };
 }
 

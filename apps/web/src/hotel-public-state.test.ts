@@ -20,6 +20,9 @@ import { FIXTURE_WALLET } from "./hotel/source";
 const NOW = Date.parse("2026-09-18T12:00:00.000Z");
 const CHECKED_IN = "2026-09-01T12:00:00.000Z";
 
+/** Test stub: treat every address as an EOA (empty code). */
+const eoaGetCode = async (): Promise<string> => "0x";
+
 let db: PGlite;
 
 function asSql(database: PGlite): SqlExecutor {
@@ -91,7 +94,11 @@ afterEach(async () => {
 describe("canonical public hotel state", () => {
   it("reads persisted ranking, maps rooms 1–100, and keeps the lobby threshold canonical", async () => {
     await seedRankedHotel(new Date(NOW - 1_000));
-    const state = await readCanonicalHotelState(asSql(db), { nowMs: NOW, wallet: null });
+    const state = await readCanonicalHotelState(asSql(db), {
+      nowMs: NOW,
+      wallet: null,
+      getCode: eoaGetCode,
+    });
     const expectedRanked = rankEligibleHolders(
       Array.from({ length: 120 }, (_, index) => ({
         address: holderAddress(index + 1),
@@ -101,6 +108,7 @@ describe("canonical public hotel state", () => {
 
     expect(state.fixturePreview).toBe(false);
     expect(state.syncing).toBe(false);
+    expect(state.activeCheckedInTop100Count).toBe(0);
     expect(state.lastIndexedBlock).toBe("42");
     expect(state.freshnessMs).toBe(1_000);
     expect(roomAssignmentForRank(1)).toEqual({ kind: "penthouse", room: 1, rank: 1 });
@@ -141,6 +149,7 @@ describe("canonical public hotel state", () => {
     const penthouse = await readCanonicalHotelState(asSql(db), {
       nowMs: NOW,
       wallet: holderAddress(1),
+      getCode: eoaGetCode,
     });
     expect(penthouse.stay).toMatchObject({
       kind: "checked_in",
@@ -153,6 +162,7 @@ describe("canonical public hotel state", () => {
     const lobby = await readCanonicalHotelState(asSql(db), {
       nowMs: NOW,
       wallet: holderAddress(101),
+      getCode: eoaGetCode,
     });
     expect(lobby.stay.kind).toBe("lobby");
     if (lobby.stay.kind !== "lobby") return;
@@ -168,11 +178,33 @@ describe("canonical public hotel state", () => {
     );
   });
 
+  it("excludes contract wallets from the public Top 100 via eth_getCode", async () => {
+    await seedRankedHotel(new Date(NOW - 1_000));
+    const contractWallet = holderAddress(888);
+    await db.query(`INSERT INTO holders (address, balance_raw) VALUES ($1, $2::numeric)`, [
+      contractWallet,
+      "999999999999",
+    ]);
+
+    const state = await readCanonicalHotelState(asSql(db), {
+      nowMs: NOW,
+      wallet: null,
+      getCode: async (address) =>
+        address === contractWallet ? "0x608060405234801561001057600080fd5b50" : "0x",
+    });
+
+    expect(state.syncing).toBe(false);
+    expect(state.rooms.some((room) => room.address === contractWallet)).toBe(false);
+    expect(state.lobby.some((guest) => guest.address === contractWallet)).toBe(false);
+    expect(state.rooms[0]?.address).toBe(holderAddress(1));
+  });
+
   it("withholds occupancy and reports HOTEL SYNCING when the index is stale or not current", async () => {
     await seedRankedHotel(new Date(NOW - 30_001));
     const stale = await readCanonicalHotelState(asSql(db), {
       nowMs: NOW,
       wallet: holderAddress(1),
+      getCode: eoaGetCode,
     });
     expect(stale.syncing).toBe(true);
     expect(stale.publicStatus).toBe(PUBLIC_STATUS.SYNCING);
@@ -198,7 +230,11 @@ describe("canonical public hotel state", () => {
       `UPDATE system_state SET operational_status = 'INDEXING_GAP', last_indexed_at = $1`,
       [new Date(NOW - 1_000).toISOString()],
     );
-    const gap = await readCanonicalHotelState(asSql(db), { nowMs: NOW, wallet: null });
+    const gap = await readCanonicalHotelState(asSql(db), {
+      nowMs: NOW,
+      wallet: null,
+      getCode: eoaGetCode,
+    });
     expect(gap.syncing).toBe(true);
     expect(gap.publicStatus).toBe(PUBLIC_STATUS.SYNCING);
     expect(gap.rooms.every((room) => room.address === null)).toBe(true);
@@ -215,6 +251,15 @@ describe("canonical public hotel state", () => {
     expect(state.rooms.every((room) => room.address === null)).toBe(true);
     expect(JSON.stringify(state)).not.toContain(FIXTURE_WALLET);
     expect(failClosedProductionSnapshot().fixturePreview).toBe(false);
+  });
+
+  it("fails closed on a live hotel when eth_getCode is unavailable", async () => {
+    await seedRankedHotel(new Date(NOW - 1_000));
+    const state = await readCanonicalHotelState(asSql(db), { nowMs: NOW, wallet: null });
+    expect(state.syncing).toBe(true);
+    expect(state.publicStatus).toBe(PUBLIC_STATUS.SYNCING);
+    expect(state.rooms.every((room) => room.address === null)).toBe(true);
+    expect(state.room100ThresholdRaw).toBeNull();
   });
 
   it("returns public activity only and drops private or unconfirmed claim data", async () => {
@@ -255,7 +300,11 @@ describe("canonical public hotel state", () => {
       [guest],
     );
 
-    const hidden = await readCanonicalHotelState(asSql(db), { nowMs: NOW, wallet: guest });
+    const hidden = await readCanonicalHotelState(asSql(db), {
+      nowMs: NOW,
+      wallet: guest,
+      getCode: eoaGetCode,
+    });
     const encoded = JSON.stringify(hidden);
     expect(encoded).not.toContain("SECRET_PAYLOAD_ERROR");
     expect(encoded).not.toContain("SECRET_NONCE_VALUE");
@@ -279,7 +328,11 @@ describe("canonical public hotel state", () => {
        ) VALUES ($1, 40, 40, 1, $2)`,
       [guest, `0x${"ab".repeat(32)}`],
     );
-    const confirmed = await readCanonicalHotelState(asSql(db), { nowMs: NOW, wallet: guest });
+    const confirmed = await readCanonicalHotelState(asSql(db), {
+      nowMs: NOW,
+      wallet: guest,
+      getCode: eoaGetCode,
+    });
     expect(confirmed.stay.kind).toBe("checked_in");
     if (confirmed.stay.kind === "checked_in") expect(confirmed.stay.claimableWei).toBe("60");
   });
@@ -313,7 +366,7 @@ describe("canonical public hotel state", () => {
     const live = await handlePublicHotelState(
       new Request("http://127.0.0.1/api/hotel/state"),
       {},
-      { sql: asSql(db), nowMs: NOW },
+      { sql: asSql(db), nowMs: NOW, getCode: eoaGetCode },
     );
     expect(live.status).toBe(200);
     const dto = await live.json();

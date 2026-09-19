@@ -68,6 +68,15 @@ export const ENTITLEMENT_CHALLENGE_TTL_SECONDS = 300 as const;
 /** Backend EIP-712 entitlement signature validity */
 export const ENTITLEMENT_SIGNATURE_VALIDITY_SECONDS = 86_400 as const;
 
+/** Check-in ownership challenge TTL (reuse entitlement challenge TTL by default) */
+export const CHECK_IN_CHALLENGE_TTL_SECONDS = 300 as const;
+
+/** Backend EIP-712 check-in eligibility authorization validity (2 minutes) */
+export const CHECK_IN_AUTH_VALIDITY_SECONDS = 120 as const;
+
+/** Onchain check-in lock duration */
+export const CHECK_IN_DURATION_SECONDS = 3_600 as const;
+
 /** Public activity feed size */
 export const PUBLIC_ACTIVITY_LIMIT = 50 as const;
 

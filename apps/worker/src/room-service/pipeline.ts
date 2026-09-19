@@ -1,9 +1,13 @@
 import {
   COLLECTION_STUCK_AFTER_MS,
+  holdersWithEffectiveEscrowBalance,
   OPERATIONAL_STATUS,
   PUBLIC_STATUS,
   rankEligibleHolders,
+  rewardWeight,
+  stayBoostPhase,
 } from "@hotel100/domain";
+import { loadEscrowsOpenAtBlock, toDomainEscrows } from "../check-in/index.js";
 import { reconstructBalancesFromTransfers } from "../indexer/balances.js";
 import { filterEligibleHolders } from "../indexer/eligibility.js";
 import type { SqlExecutor } from "../indexer/sql.js";
@@ -28,6 +32,8 @@ export type RoomServiceWorkerDeps = {
   financialReader: RoomServiceFinancialReader;
   hotelOpenTimestamp: number | null;
   exclusions: Set<string>;
+  /** RoomService address — excluded from ranking; escrow attribution source. */
+  roomServiceAddress?: string;
   sleep?: (ms: number) => Promise<void>;
 };
 
@@ -114,24 +120,62 @@ export class RoomServiceWorker {
       const earned = await totalFinalizedEarnedWei(this.deps.db);
       const accounting = computeUnallocated({ read, totalFinalizedEarnedWei: earned });
 
+      const snapshotTs = await this.deps.reader.getBlockTimestamp(snapshotBlock);
+      if (snapshotTs === null) {
+        throw new Error("snapshot block timestamp missing");
+      }
+
       const holdersAtSnapshot = reconstructBalancesFromTransfers(
         (await this.deps.store.getAllTransfersOrdered()).filter(
           (log) => log.blockNumber <= snapshotBlock,
         ),
       );
-      const eligible = await filterEligibleHolders({
-        reader: this.deps.reader,
-        holders: [...holdersAtSnapshot.entries()].map(([address, balanceRaw]) => ({
+      const escrowRows = await loadEscrowsOpenAtBlock(this.deps.db, snapshotBlock);
+      const escrows = toDomainEscrows(escrowRows);
+      const escrowByGuest = new Map(escrowRows.map((row) => [row.guestAddress, row] as const));
+
+      const withEffective = holdersWithEffectiveEscrowBalance({
+        walletHolders: [...holdersAtSnapshot.entries()].map(([address, balanceRaw]) => ({
           address,
           balanceRaw,
         })),
+        escrows,
+        excludedAddresses: this.deps.exclusions,
+      });
+
+      const eligible = await filterEligibleHolders({
+        reader: this.deps.reader,
+        holders: withEffective,
         snapshotBlock,
         exclusions: this.deps.exclusions,
       });
       const ranked = rankEligibleHolders(eligible).filter((h) => h.rank <= 100);
+
+      const guests = ranked.map((h) => {
+        const walletHeld = holdersAtSnapshot.get(h.address) ?? 0n;
+        const esc = escrowByGuest.get(h.address);
+        const phase = stayBoostPhase({
+          hasUnwithdrawnStay: Boolean(esc),
+          unlockTimestamp: esc?.unlockTimestamp ?? 0,
+          snapshotTimestamp: snapshotTs,
+        });
+        const weight = rewardWeight({
+          walletHeld,
+          escrowAmount: esc?.amountRaw ?? 0n,
+          isActiveEscrow: phase === "active",
+          isTop100: true,
+        });
+        return {
+          address: h.address,
+          balanceRaw: weight,
+          rewardWeightRaw: weight,
+          rank: h.rank,
+        };
+      });
+
       const allocated = allocateServicePool({
         servicePoolWei: accounting.unallocated,
-        guests: ranked,
+        guests,
       });
 
       const submitted = await submitServiceFinalization(this.deps.db, {
@@ -139,7 +183,7 @@ export class RoomServiceWorker {
         boundaryTimestamp: boundary,
         financialReadBlock: accounting.financialReadBlock,
         servicePoolWei: accounting.unallocated,
-        totalEligibleBalanceRaw: ranked.reduce((s, g) => s + g.balanceRaw, 0n),
+        totalEligibleBalanceRaw: guests.reduce((s, g) => s + g.balanceRaw, 0n),
         contractBalanceWei: read.contractBalanceWei,
         totalRoomServiceClaimedWei: read.totalRoomServiceClaimedWei,
         unallocatedWeiBefore: accounting.unallocated,

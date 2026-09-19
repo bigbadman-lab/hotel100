@@ -1,11 +1,12 @@
-import { type Address, additionalNeededToBeatTarget } from "@hotel100/domain";
+import { type Address, additionalNeededToBeatTarget, checkInMinimum } from "@hotel100/domain";
 import Image from "next/image";
-import type { ReactElement } from "react";
+import { type ReactElement, useState } from "react";
 import {
   formatActivityClock,
   formatEthFromWei,
   formatRawUnits,
   formatRelativeTime,
+  formatServiceClock,
   formatStayDuration,
   shortenAddress,
 } from "../format";
@@ -13,6 +14,7 @@ import type { HeaderStatus } from "../present";
 import type {
   ActivityItem,
   ActivityKind,
+  GuestCheckInView,
   GuestStayView,
   HotelSnapshot,
   LobbyGuest,
@@ -145,31 +147,51 @@ export function HotelHeader(props: {
   );
 }
 
-export function HotelOperationalState(props: { status: HeaderStatus; current: boolean }) {
-  if (props.current && props.status.tone === "live") return null;
-  if (props.current && props.status.tone === "mvp") return null;
+export function HotelOperationalState(props: {
+  status: HeaderStatus;
+  current: boolean;
+  checkedInCount?: number;
+}) {
+  const metric =
+    typeof props.checkedInCount === "number" ? (
+      <p className="hotel-checkin-metric">
+        <span className="hotel-mono">{props.checkedInCount} / 100</span> ROOMS CHECKED IN
+      </p>
+    ) : null;
+
+  if (props.current && props.status.tone === "live") return metric;
+  if (props.current && props.status.tone === "mvp") return metric;
   if (props.status.tone === "soon") {
     return (
-      <p className="hotel-op-banner" role="status">
-        Check-in has not opened. Rooms stay vacant until HOTEL is live.
-      </p>
+      <>
+        <p className="hotel-op-banner" role="status">
+          Check-in has not opened. Rooms stay vacant until HOTEL is live.
+        </p>
+        {metric}
+      </>
     );
   }
   if (!props.current) {
     return (
-      <p className="hotel-op-banner" role="status">
-        {props.status.label}. Indexed room assignments are not current.
-      </p>
+      <>
+        <p className="hotel-op-banner" role="status">
+          {props.status.label}. Indexed room assignments are not current.
+        </p>
+        {metric}
+      </>
     );
   }
   if (props.status.tone === "delayed" || props.status.tone === "arriving") {
     return (
-      <p className={`hotel-op-banner hotel-op-banner--${props.status.tone}`} role="status">
-        {props.status.label}
-      </p>
+      <>
+        <p className={`hotel-op-banner hotel-op-banner--${props.status.tone}`} role="status">
+          {props.status.label}
+        </p>
+        {metric}
+      </>
     );
   }
-  return null;
+  return metric;
 }
 
 export function YourStayPanel(props: {
@@ -178,9 +200,19 @@ export function YourStayPanel(props: {
   wallet: Address | null;
   onConnect: () => void;
   onFocusRoom: () => void;
+  checkInEnabled?: boolean;
+  checkInNote?: string;
+  checkInBusy?: boolean;
+  onApproveCheckIn?: (amount: bigint) => void;
+  onCheckIn?: (amount: bigint) => void;
+  onCheckOut?: () => void;
 }) {
   const stay = props.stay;
   const disconnected = stay.kind === "prelive" || stay.kind === "disconnected";
+  const checkIn =
+    stay.kind === "checked_in" || stay.kind === "lobby" || stay.kind === "not_checked_in"
+      ? stay.checkIn
+      : undefined;
 
   async function copyWallet() {
     if (!props.wallet || typeof navigator === "undefined" || !navigator.clipboard) return;
@@ -251,6 +283,17 @@ export function YourStayPanel(props: {
               <dd className="hotel-mono">{formatEthFromWei(stay.claimableWei)} ETH</dd>
             </div>
           </dl>
+          <CheckInControls
+            stayKind={stay.kind}
+            checkIn={checkIn}
+            nowMs={props.nowMs}
+            enabled={props.checkInEnabled === true}
+            note={props.checkInNote}
+            busy={props.checkInBusy}
+            onApprove={props.onApproveCheckIn}
+            onCheckIn={props.onCheckIn}
+            onCheckOut={props.onCheckOut}
+          />
           <StayFob />
         </>
       ) : null}
@@ -324,6 +367,17 @@ export function YourStayPanel(props: {
               <dd className="hotel-mono">{formatEthFromWei(stay.claimableWei)} ETH</dd>
             </div>
           </dl>
+          <CheckInControls
+            stayKind={stay.kind}
+            checkIn={checkIn}
+            nowMs={props.nowMs}
+            enabled={props.checkInEnabled === true}
+            note={props.checkInNote}
+            busy={props.checkInBusy}
+            onApprove={props.onApproveCheckIn}
+            onCheckIn={props.onCheckIn}
+            onCheckOut={props.onCheckOut}
+          />
           <StayFob />
         </>
       ) : null}
@@ -399,11 +453,149 @@ export function YourStayPanel(props: {
               <dd>{stay.bestRoom === null ? "—" : `#${stay.bestRoom}`}</dd>
             </div>
           </dl>
+          <CheckInControls
+            stayKind={stay.kind}
+            checkIn={checkIn}
+            nowMs={props.nowMs}
+            enabled={props.checkInEnabled === true}
+            note={props.checkInNote}
+            busy={props.checkInBusy}
+            onApprove={props.onApproveCheckIn}
+            onCheckIn={props.onCheckIn}
+            onCheckOut={props.onCheckOut}
+          />
           <StayFob />
         </>
       ) : null}
     </section>
   );
+}
+
+function CheckInControls(props: {
+  stayKind: "checked_in" | "lobby" | "not_checked_in";
+  checkIn: GuestCheckInView | undefined;
+  nowMs: number | null;
+  enabled: boolean;
+  note?: string;
+  busy?: boolean;
+  onApprove?: (amount: bigint) => void;
+  onCheckIn?: (amount: bigint) => void;
+  onCheckOut?: () => void;
+}) {
+  const checkIn = props.checkIn;
+  const [amountText, setAmountText] = useState("");
+
+  if (!checkIn) return null;
+
+  const phase = checkIn.stayPhase;
+  const locked = checkIn.unwithdrawnEscrowRaw;
+  const minAmount = checkInMinimum(checkIn.effectiveBalanceRaw);
+  const maxAmount = checkIn.walletHeldRaw;
+  const parsedAmount = parseAmountInput(amountText);
+  const amountOk =
+    parsedAmount !== null &&
+    parsedAmount >= minAmount &&
+    parsedAmount <= maxAmount &&
+    parsedAmount > 0n;
+  const canStart =
+    props.enabled &&
+    props.stayKind === "checked_in" &&
+    phase === "none" &&
+    !checkIn.hasUnwithdrawnStay;
+  const countdown =
+    props.nowMs !== null && checkIn.unlockTimestamp !== null
+      ? Math.max(0, checkIn.unlockTimestamp - Math.floor(props.nowMs / 1000))
+      : null;
+
+  if (phase === "active") {
+    const top100 = props.stayKind === "checked_in";
+    return (
+      <div className="hotel-checkin">
+        <p className="hotel-checkin__status">CHECKED IN</p>
+        <p className="hotel-checkin__lock hotel-mono">{formatRawUnits(locked)} HOTEL locked</p>
+        {countdown !== null ? (
+          <p className="hotel-checkin__countdown hotel-mono">{formatServiceClock(countdown)}</p>
+        ) : null}
+        {top100 ? (
+          <p className="hotel-checkin__boost">1.5x ROOM SERVICE</p>
+        ) : (
+          <p className="hotel-checkin__paused">ROOM SERVICE PAUSED — NOT CURRENTLY TOP 100</p>
+        )}
+        {props.note ? <p className="hotel-checkin__note">{props.note}</p> : null}
+      </div>
+    );
+  }
+
+  if (phase === "expired") {
+    return (
+      <div className="hotel-checkin">
+        <p className="hotel-checkin__status">STAY COMPLETE · UNLOCKED</p>
+        <p className="hotel-checkin__lock hotel-mono">{formatRawUnits(locked)} HOTEL</p>
+        <p className="hotel-checkin__boost">1.0x ROOM SERVICE</p>
+        <button
+          type="button"
+          className="hotel-btn hotel-btn--claim"
+          disabled={props.busy || !props.onCheckOut}
+          onClick={() => props.onCheckOut?.()}
+        >
+          CHECK OUT
+        </button>
+        {props.note ? <p className="hotel-checkin__note">{props.note}</p> : null}
+      </div>
+    );
+  }
+
+  if (!canStart) return props.note ? <p className="hotel-checkin__note">{props.note}</p> : null;
+
+  return (
+    <div className="hotel-checkin">
+      <label className="hotel-checkin__label" htmlFor="check-in-amount">
+        Check-in amount
+      </label>
+      <input
+        id="check-in-amount"
+        className="hotel-checkin__input hotel-mono"
+        inputMode="numeric"
+        placeholder={`Min ${formatRawUnits(minAmount)}`}
+        value={amountText}
+        onChange={(event) => setAmountText(event.target.value.replace(/[^\d]/g, ""))}
+        disabled={props.busy}
+      />
+      <p className="hotel-checkin__hint">Min 10% · max {formatRawUnits(maxAmount)} wallet HOTEL</p>
+      <div className="hotel-checkin__actions">
+        <button
+          type="button"
+          className="hotel-btn hotel-btn--ghost"
+          disabled={props.busy || !amountOk || !props.onApprove}
+          onClick={() => {
+            if (parsedAmount !== null) props.onApprove?.(parsedAmount);
+          }}
+        >
+          APPROVE HOTEL
+        </button>
+        <button
+          type="button"
+          className="hotel-btn hotel-btn--claim"
+          disabled={props.busy || !amountOk || !props.onCheckIn}
+          onClick={() => {
+            if (parsedAmount !== null) props.onCheckIn?.(parsedAmount);
+          }}
+        >
+          CHECK IN
+        </button>
+      </div>
+      {props.note ? <p className="hotel-checkin__note">{props.note}</p> : null}
+    </div>
+  );
+}
+
+function parseAmountInput(value: string): bigint | null {
+  if (!/^\d+$/.test(value)) return null;
+  try {
+    return BigInt(value);
+  } catch {
+    return null;
+  }
 }
 
 function StayFob() {

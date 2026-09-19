@@ -2,6 +2,13 @@
 
 import { type Address, normalizeAddress, ROOM_POLL_INTERVAL_MS } from "@hotel100/domain";
 import { useEffect, useRef, useState } from "react";
+import {
+  approveExactHotel,
+  checkInUiAfterSubmit,
+  executeCheckIn,
+  executeCheckOut,
+  readStayFromContract,
+} from "./check-in-tx";
 import { claimUiAfterSubmit, type EthereumRequest, executeRoomServiceClaim } from "./claim";
 import {
   HotelFacade,
@@ -34,6 +41,7 @@ export function HotelApp(props: {
   hotelLive: boolean;
   scenario: FixtureScenario;
   roomServiceAddress: Address | null;
+  hotelTokenAddress: Address | null;
 }) {
   const initial =
     props.mode === "fixture"
@@ -52,6 +60,8 @@ export function HotelApp(props: {
   const [cues, setCues] = useState<MotionCue[]>([]);
   const [walletOverride, setWalletOverride] = useState<Address | null>(null);
   const [claimNote, setClaimNote] = useState("");
+  const [checkInNote, setCheckInNote] = useState("");
+  const [checkInBusy, setCheckInBusy] = useState(false);
   const [wasArriving, setWasArriving] = useState(false);
   const snapshotRef = useRef(initial);
   const refreshRef = useRef<() => Promise<void>>(async () => {});
@@ -187,6 +197,126 @@ export function HotelApp(props: {
     }
   }
 
+  async function withWalletProvider(): Promise<{
+    provider: EthereumRequest;
+    account: Address;
+  } | null> {
+    if (!wallet) {
+      setCheckInNote("Connect a wallet. Nothing was broadcast.");
+      return null;
+    }
+    const provider = (window as unknown as { ethereum?: EthereumRequest }).ethereum;
+    if (!provider) {
+      setCheckInNote("No injected wallet. Nothing was broadcast.");
+      return null;
+    }
+    return { provider, account: wallet };
+  }
+
+  async function onApproveCheckIn(amount: bigint) {
+    const ctx = await withWalletProvider();
+    if (!ctx) return;
+    if (!props.roomServiceAddress || !props.hotelTokenAddress) {
+      setCheckInNote("Room Service is not configured. Nothing was broadcast.");
+      return;
+    }
+    setCheckInBusy(true);
+    setCheckInNote("Confirm the exact HOTEL approval in your wallet.");
+    try {
+      const result = await approveExactHotel({
+        provider: ctx.provider,
+        account: ctx.account,
+        token: props.hotelTokenAddress,
+        spender: props.roomServiceAddress,
+        amount,
+      });
+      setCheckInNote(
+        result.ok ? "Approval confirmed. You can check in." : checkInUiAfterSubmit(result).note,
+      );
+    } catch {
+      setCheckInNote("Approval was not confirmed.");
+    } finally {
+      setCheckInBusy(false);
+    }
+  }
+
+  async function onCheckIn(amount: bigint) {
+    if (!snapshot.checkInEnabled) {
+      setCheckInNote("Check-in is not enabled.");
+      return;
+    }
+    const ctx = await withWalletProvider();
+    if (!ctx) return;
+    setCheckInBusy(true);
+    setCheckInNote("Confirm check-in in your wallet.");
+    try {
+      const result = await executeCheckIn({
+        origin: window.location.origin,
+        account: ctx.account,
+        provider: ctx.provider,
+        roomServiceAddress: props.roomServiceAddress,
+        hotelTokenAddress: props.hotelTokenAddress,
+        amount,
+        signMessage: async (message) => {
+          const signature = await ctx.provider.request({
+            method: "personal_sign",
+            params: [message, ctx.account],
+          });
+          if (typeof signature !== "string" || !signature.startsWith("0x")) {
+            throw new Error("rejected");
+          }
+          return signature as `0x${string}`;
+        },
+      });
+      const ui = checkInUiAfterSubmit(result);
+      setCheckInNote(ui.note);
+      if (ui.refresh) {
+        setCheckInNote("Confirmed. Waiting for hotel state…");
+        await refreshRef.current();
+      }
+    } catch {
+      setCheckInNote("Check-in was not confirmed.");
+    } finally {
+      setCheckInBusy(false);
+    }
+  }
+
+  async function onCheckOut() {
+    const ctx = await withWalletProvider();
+    if (!ctx) return;
+    setCheckInBusy(true);
+    setCheckInNote("Confirm check-out in your wallet.");
+    try {
+      if (props.roomServiceAddress) {
+        const onchain = await readStayFromContract({
+          provider: ctx.provider,
+          roomServiceAddress: props.roomServiceAddress,
+          guest: ctx.account,
+        });
+        if (onchain && onchain.amount > 0n) {
+          const now = Math.floor(Date.now() / 1000);
+          if (Number(onchain.unlockTimestamp) > now) {
+            setCheckInNote("Stay is still locked.");
+            setCheckInBusy(false);
+            return;
+          }
+        }
+      }
+      const result = await executeCheckOut({
+        account: ctx.account,
+        provider: ctx.provider,
+        roomServiceAddress: props.roomServiceAddress,
+      });
+      const ui = checkInUiAfterSubmit(result);
+      setCheckInNote(ui.note);
+      if (ui.refresh) await refreshRef.current();
+    } catch {
+      setCheckInNote("Check-out was not confirmed.");
+    } finally {
+      setCheckInBusy(false);
+    }
+  }
+
   const lightRooms = cues.flatMap((cue) => (cue.kind === "occupant-light" ? [cue.room] : []));
   return (
     <div
@@ -200,7 +330,11 @@ export function HotelApp(props: {
         walletLabel={wallet ? shortenAddress(wallet) : "Connect Wallet"}
         onConnect={() => void onConnect()}
       />
-      <HotelOperationalState status={status} current={current || snapshot.fixturePreview} />
+      <HotelOperationalState
+        status={status}
+        current={current || snapshot.fixturePreview}
+        checkedInCount={snapshot.activeCheckedInTop100Count}
+      />
       <main className="hotel-main">
         <div className="hotel-grid">
           <YourStayPanel
@@ -211,6 +345,12 @@ export function HotelApp(props: {
             onFocusRoom={() => {
               if (youRoom !== null) setSelectedRoom(youRoom);
             }}
+            checkInEnabled={snapshot.checkInEnabled}
+            checkInNote={checkInNote}
+            checkInBusy={checkInBusy}
+            onApproveCheckIn={(amount) => void onApproveCheckIn(amount)}
+            onCheckIn={(amount) => void onCheckIn(amount)}
+            onCheckOut={() => void onCheckOut()}
           />
           <HotelFacade
             snapshot={snapshot}

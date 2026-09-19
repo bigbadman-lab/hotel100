@@ -118,6 +118,8 @@ function base(
       holders: "241",
       contract: null,
     },
+    activeCheckedInTop100Count: 0,
+    checkInEnabled: false,
   };
 }
 
@@ -184,6 +186,8 @@ export function productionSnapshot(hotelLive: boolean): HotelSnapshot {
     stay: hotelLive ? { kind: "disconnected" } : { kind: "prelive" },
     activity: [],
     market: EMPTY_MARKET,
+    activeCheckedInTop100Count: 0,
+    checkInEnabled: false,
   };
 }
 

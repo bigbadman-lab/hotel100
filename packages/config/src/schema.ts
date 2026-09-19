@@ -13,6 +13,9 @@ import {
 /** Default live flag — production activation is a later gate */
 export const HOTEL_LIVE_DEFAULT = false as const;
 
+/** Check-in feature flag — production enablement is a later gate */
+export const HOTEL_CHECKIN_ENABLED_DEFAULT = false as const;
+
 /**
  * Keys that may remain unresolved until later (§28).
  * Do not invent values for these in production config.
@@ -32,6 +35,7 @@ export type HotelUnresolvedConfigKeys =
   | "ROOMSERVICE_ADDRESS"
   | "HOTEL_DEPLOYER_OWNER_ADDRESS"
   | "HOTEL_ENTITLEMENT_SIGNER_ADDRESS"
+  | "HOTEL_ELIGIBILITY_SIGNER_ADDRESS"
   | "HOTEL_WORKER_WRITER_ADDRESS"
   | "SUPABASE_URL"
   | "SUPABASE_ANON_KEY"
@@ -49,6 +53,8 @@ export type HotelUnresolvedConfigKeys =
 export type HotelConfig = {
   chainId: typeof HOTEL_CHAIN_ID;
   hotelLive: boolean;
+  /** When false, check-in authorize API refuses. Default false — do not enable in production yet. */
+  hotelCheckInEnabled: boolean;
 
   /** Unresolved until set — never invent */
   rpcUrl?: string;
@@ -74,9 +80,15 @@ export type HotelConfig = {
 
   roomServiceAddress?: Address;
 
-  /** Exactly three production wallets for V1 (§15) */
+  /**
+   * Production wallet roles.
+   * V1 launch used three EOAs; check-in adds an optional eligibility signer
+   * (distinct from entitlement signer). Required when hotelCheckInEnabled.
+   */
   deployerOwnerAddress?: Address;
   entitlementSignerAddress?: Address;
+  /** Check-in EIP-712 signer — never reuse the entitlement signer key. */
+  eligibilitySignerAddress?: Address;
   workerWriterAddress?: Address;
 
   supabaseUrl?: string;
@@ -114,6 +126,7 @@ export function frozenConfigDefaults(): Pick<
   HotelConfig,
   | "chainId"
   | "hotelLive"
+  | "hotelCheckInEnabled"
   | "ponsCreatorTaxBps"
   | "ponsBuybackEnabled"
   | "ponsOpeningBuyEth"
@@ -125,6 +138,7 @@ export function frozenConfigDefaults(): Pick<
   return {
     chainId: HOTEL_CHAIN_ID,
     hotelLive: HOTEL_LIVE_DEFAULT,
+    hotelCheckInEnabled: HOTEL_CHECKIN_ENABLED_DEFAULT,
     ponsCreatorTaxBps: PONS_CREATOR_TAX_BPS,
     ponsBuybackEnabled: PONS_BUYBACK_ENABLED,
     ponsOpeningBuyEth: PONS_OPENING_BUY_ETH,

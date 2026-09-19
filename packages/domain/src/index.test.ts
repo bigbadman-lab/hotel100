@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { addressLessThan, compareAddressNumeric, normalizeAddress } from "./address.js";
 import {
+  checkInMinimum,
+  countsTowardCheckedInMetric,
+  currentRewardMultiplierBps,
+  effectiveHotelBalance,
+  escrowCoherentWithRoomServiceBalance,
+  holdersWithEffectiveEscrowBalance,
+  rewardWeight,
+  stayBoostPhase,
+} from "./check-in.js";
+import {
+  CHECK_IN_AUTH_VALIDITY_SECONDS,
+  CHECK_IN_DURATION_SECONDS,
   COLLECTION_CONFIRMATIONS,
   FINANCIAL_CONFIRMATIONS,
   HOTEL_CHAIN_ID,
@@ -52,6 +64,151 @@ describe("frozen constants", () => {
     expect(COLLECTION_CONFIRMATIONS).toBe(1);
     expect(PUBLIC_STALE_THRESHOLD_MS).toBe(30_000);
     expect(SERVICE_CATCHUP_MAX).toBe(8);
+  });
+
+  it("exposes frozen check-in duration and auth validity", () => {
+    expect(CHECK_IN_DURATION_SECONDS).toBe(3_600);
+    expect(CHECK_IN_AUTH_VALIDITY_SECONDS).toBe(120);
+  });
+});
+
+describe("check-in effective balance and reward weight", () => {
+  it("effective balance is wallet + unwithdrawn escrow", () => {
+    expect(effectiveHotelBalance(100n, 0n)).toBe(100n);
+    expect(effectiveHotelBalance(80n, 20n)).toBe(100n);
+    expect(effectiveHotelBalance(0n, 50n)).toBe(50n);
+  });
+
+  it("ranking is unaffected by check-in vs wallet split at same total", () => {
+    const liquid = rankEligibleHolders([
+      { address: "0x0000000000000000000000000000000000000001", balanceRaw: 100n },
+      { address: "0x0000000000000000000000000000000000000002", balanceRaw: 90n },
+    ]);
+    const checkedIn = rankEligibleHolders([
+      {
+        address: "0x0000000000000000000000000000000000000001",
+        balanceRaw: effectiveHotelBalance(70n, 30n),
+      },
+      { address: "0x0000000000000000000000000000000000000002", balanceRaw: 90n },
+    ]);
+    expect(liquid.map((h) => h.address)).toEqual(checkedIn.map((h) => h.address));
+    expect(liquid[0]?.rank).toBe(1);
+  });
+
+  it("minimum check-in is 10% of effective balance with ceiling", () => {
+    expect(checkInMinimum(0n)).toBe(0n);
+    expect(checkInMinimum(100n)).toBe(10n);
+    expect(checkInMinimum(1n)).toBe(1n);
+    expect(checkInMinimum(15n)).toBe(2n);
+  });
+
+  it("reward weight is 1.5x only while escrow is active and Top 100", () => {
+    expect(
+      rewardWeight({
+        walletHeld: 70n,
+        escrowAmount: 30n,
+        isActiveEscrow: true,
+        isTop100: true,
+      }),
+    ).toBe(70n + 45n);
+    expect(
+      rewardWeight({
+        walletHeld: 70n,
+        escrowAmount: 30n,
+        isActiveEscrow: false,
+        isTop100: true,
+      }),
+    ).toBe(100n);
+    expect(
+      rewardWeight({
+        walletHeld: 70n,
+        escrowAmount: 30n,
+        isActiveEscrow: true,
+        isTop100: false,
+      }),
+    ).toBe(0n);
+  });
+
+  it("partial escrow boosts only the escrowed amount", () => {
+    expect(
+      rewardWeight({
+        walletHeld: 90n,
+        escrowAmount: 10n,
+        isActiveEscrow: true,
+        isTop100: true,
+      }),
+    ).toBe(90n + 15n);
+  });
+
+  it("stayBoostPhase uses unlock boundary without floating point", () => {
+    expect(
+      stayBoostPhase({
+        hasUnwithdrawnStay: true,
+        unlockTimestamp: 1000,
+        snapshotTimestamp: 999,
+      }),
+    ).toBe("active");
+    expect(
+      stayBoostPhase({
+        hasUnwithdrawnStay: true,
+        unlockTimestamp: 1000,
+        snapshotTimestamp: 1000,
+      }),
+    ).toBe("expired");
+    expect(
+      stayBoostPhase({
+        hasUnwithdrawnStay: false,
+        unlockTimestamp: 1000,
+        snapshotTimestamp: 500,
+      }),
+    ).toBe("none");
+  });
+
+  it("display multiplier and checked-in metric follow Top 100 + phase", () => {
+    expect(currentRewardMultiplierBps({ isTop100: true, stayPhase: "active" })).toBe(15_000n);
+    expect(currentRewardMultiplierBps({ isTop100: true, stayPhase: "expired" })).toBe(10_000n);
+    expect(currentRewardMultiplierBps({ isTop100: false, stayPhase: "active" })).toBe(0n);
+    expect(countsTowardCheckedInMetric({ isTop100: true, stayPhase: "active" })).toBe(true);
+    expect(countsTowardCheckedInMetric({ isTop100: false, stayPhase: "active" })).toBe(false);
+    expect(countsTowardCheckedInMetric({ isTop100: true, stayPhase: "expired" })).toBe(false);
+  });
+
+  it("merges escrow into ranking and excludes RoomService without attributing direct transfers", () => {
+    const roomService = "0x00000000000000000000000000000000000000c0";
+    const guest = "0x0000000000000000000000000000000000000001";
+    const other = "0x0000000000000000000000000000000000000002";
+    const merged = holdersWithEffectiveEscrowBalance({
+      walletHolders: [
+        { address: guest, balanceRaw: 60n },
+        { address: roomService, balanceRaw: 55n },
+        { address: other, balanceRaw: 90n },
+      ],
+      escrows: [
+        {
+          guestAddress: guest,
+          amountRaw: 40n,
+          checkInTimestamp: 1,
+          unlockTimestamp: 3601,
+        },
+      ],
+      excludedAddresses: new Set([roomService]),
+    });
+    const ranked = rankEligibleHolders(merged);
+    expect(ranked.map((h) => h.address)).toEqual([guest, other]);
+    expect(ranked[0]?.balanceRaw).toBe(100n);
+    // Direct surplus on RoomService (55 - 40) is never attributed to a guest.
+    expect(
+      escrowCoherentWithRoomServiceBalance({
+        unwithdrawnEscrowTotal: 40n,
+        roomServiceBalanceRaw: 55n,
+      }),
+    ).toBe(true);
+    expect(
+      escrowCoherentWithRoomServiceBalance({
+        unwithdrawnEscrowTotal: 56n,
+        roomServiceBalanceRaw: 55n,
+      }),
+    ).toBe(false);
   });
 });
 

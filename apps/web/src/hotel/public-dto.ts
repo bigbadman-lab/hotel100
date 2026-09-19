@@ -2,6 +2,7 @@ import { type Address, normalizeAddress } from "@hotel100/domain";
 import type {
   ActivityItem,
   ActivityKind,
+  GuestCheckInView,
   GuestStayView,
   HotelSnapshot,
   MarketStrip,
@@ -48,6 +49,7 @@ export type PublicStayDto =
       additionalNeededRaw: string;
       targetRoom: number | null;
       claimableWei: string;
+      checkIn?: PublicConnectedCheckInDto;
     }
   | {
       kind: "lobby";
@@ -57,12 +59,26 @@ export type PublicStayDto =
       additionalNeededRaw: string | null;
       bestRoom: number | null;
       claimableWei: string;
+      checkIn?: PublicConnectedCheckInDto;
     }
   | {
       kind: "not_checked_in";
       bestRoom: number | null;
       claimableWei: string;
+      checkIn?: PublicConnectedCheckInDto;
     };
+
+/** Minimal connected-wallet check-in escrow fields (Phase 8 public API). */
+export type PublicConnectedCheckInDto = {
+  walletHeldRaw: string;
+  unwithdrawnEscrowRaw: string;
+  effectiveBalanceRaw: string;
+  stayPhase: "none" | "active" | "expired";
+  checkInTimestamp: number | null;
+  unlockTimestamp: number | null;
+  rewardMultiplierBps: string;
+  hasUnwithdrawnStay: boolean;
+};
 
 export type PublicHotelStateDto = {
   fixturePreview: false;
@@ -77,6 +93,10 @@ export type PublicHotelStateDto = {
   nextServiceBoundaryUnixSeconds: number;
   secondsUntilNextService: number;
   room100ThresholdRaw: string | null;
+  /** Top-100 guests with an active (pre-unlock) unwithdrawn stay. */
+  activeCheckedInTop100Count: number;
+  /** Mirrors HOTEL_CHECKIN_ENABLED — when false, hide new check-in CTAs. */
+  checkInEnabled: boolean;
   connectedWallet: string | null;
   rooms: PublicRoomDto[];
   lobby: PublicLobbyDto[];
@@ -92,6 +112,20 @@ function parseRaw(value: string): bigint {
   return BigInt(value);
 }
 
+function parseCheckIn(dto: PublicConnectedCheckInDto | undefined): GuestCheckInView | undefined {
+  if (!dto) return undefined;
+  return {
+    walletHeldRaw: parseRaw(dto.walletHeldRaw),
+    unwithdrawnEscrowRaw: parseRaw(dto.unwithdrawnEscrowRaw),
+    effectiveBalanceRaw: parseRaw(dto.effectiveBalanceRaw),
+    stayPhase: dto.stayPhase,
+    checkInTimestamp: dto.checkInTimestamp,
+    unlockTimestamp: dto.unlockTimestamp,
+    rewardMultiplierBps: parseRaw(dto.rewardMultiplierBps),
+    hasUnwithdrawnStay: dto.hasUnwithdrawnStay,
+  };
+}
+
 function parseStay(stay: PublicStayDto): GuestStayView {
   if (stay.kind === "disconnected" || stay.kind === "prelive") return stay;
   if (stay.kind === "not_checked_in") {
@@ -99,6 +133,7 @@ function parseStay(stay: PublicStayDto): GuestStayView {
       kind: "not_checked_in",
       bestRoom: stay.bestRoom,
       claimableWei: parseRaw(stay.claimableWei),
+      checkIn: parseCheckIn(stay.checkIn),
     };
   }
   if (stay.kind === "lobby") {
@@ -111,6 +146,7 @@ function parseStay(stay: PublicStayDto): GuestStayView {
         stay.additionalNeededRaw === null ? null : parseRaw(stay.additionalNeededRaw),
       bestRoom: stay.bestRoom,
       claimableWei: parseRaw(stay.claimableWei),
+      checkIn: parseCheckIn(stay.checkIn),
     };
   }
   return {
@@ -123,6 +159,7 @@ function parseStay(stay: PublicStayDto): GuestStayView {
     additionalNeededRaw: parseRaw(stay.additionalNeededRaw),
     targetRoom: stay.targetRoom,
     claimableWei: parseRaw(stay.claimableWei),
+    checkIn: parseCheckIn(stay.checkIn),
   };
 }
 
@@ -164,6 +201,8 @@ export function snapshotFromPublicDto(dto: PublicHotelStateDto): HotelSnapshot {
       holders: dto.market.holders,
       contract: dto.market.contract,
     },
+    activeCheckedInTop100Count: dto.activeCheckedInTop100Count,
+    checkInEnabled: dto.checkInEnabled ?? false,
   };
 }
 

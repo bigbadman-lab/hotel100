@@ -3,6 +3,7 @@ export {
   type ConfigValidationResult,
   emptyHotelConfig,
   frozenConfigDefaults,
+  HOTEL_CHECKIN_ENABLED_DEFAULT,
   HOTEL_LIVE_DEFAULT,
   type HotelConfig,
   type HotelUnresolvedConfigKeys,
@@ -13,6 +14,7 @@ export {
 
 export {
   hotelConfigFromEnv,
+  validateEligibilitySigner,
   validateProductionConfig,
   validateProductionWallets,
 } from "./validate.js";

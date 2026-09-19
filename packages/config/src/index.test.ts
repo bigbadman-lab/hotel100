@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   emptyHotelConfig,
   hotelConfigFromEnv,
+  validateEligibilitySigner,
   validateProductionConfig,
   validateProductionWallets,
 } from "./index.js";
@@ -149,7 +150,17 @@ describe("hotelConfigFromEnv", () => {
     expect(config.deployerOwnerAddress).toBeUndefined();
     expect(config.rpcUrl).toBeUndefined();
     expect(config.hotelLive).toBe(false);
+    expect(config.hotelCheckInEnabled).toBe(false);
     expect(config.chainId).toBe(4663);
+  });
+
+  it("parses HOTEL_CHECKIN_ENABLED and eligibility signer", () => {
+    const config = hotelConfigFromEnv({
+      HOTEL_CHECKIN_ENABLED: "true",
+      HOTEL_ELIGIBILITY_SIGNER_ADDRESS: OTHER,
+    });
+    expect(config.hotelCheckInEnabled).toBe(true);
+    expect(config.eligibilitySignerAddress).toBe(OTHER);
   });
 
   it("parses manual exclusions as lowercase addresses", () => {
@@ -165,5 +176,51 @@ describe("hotelConfigFromEnv", () => {
 
   it("rejects non-4663 chain id from env", () => {
     expect(() => hotelConfigFromEnv({ HOTEL_CHAIN_ID: "1" })).toThrow(/4663/);
+  });
+});
+
+describe("eligibility signer", () => {
+  const ELIG = "0x0000000000000000000000000000000000000005";
+
+  it("accepts a distinct eligibility signer", () => {
+    const result = validateEligibilitySigner({
+      eligibilitySignerAddress: ELIG,
+      deployerOwnerAddress: DEPLOYER,
+      entitlementSignerAddress: SIGNER,
+      workerWriterAddress: WRITER,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("BLOCKED when eligibility equals entitlement signer", () => {
+    const result = validateEligibilitySigner({
+      eligibilitySignerAddress: SIGNER,
+      entitlementSignerAddress: SIGNER,
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("requires eligibility signer when check-in enabled", () => {
+    const config = emptyHotelConfig();
+    config.hotelCheckInEnabled = true;
+    config.rpcUrl = "https://example.invalid/rpc";
+    config.domain = "hotel.example";
+    config.tokenAddress = OTHER;
+    config.ponsFeeEscrowAddress = OTHER;
+    config.hoodLockAddress = OTHER;
+    config.roomServiceAddress = OTHER;
+    config.deployerOwnerAddress = DEPLOYER;
+    config.entitlementSignerAddress = SIGNER;
+    config.workerWriterAddress = WRITER;
+    config.supabaseUrl = "https://example.supabase.co";
+    config.databaseUrl = "postgresql://local/hotel";
+    config.hotelLaunchBlock = 1n;
+    config.hotelOpenBlock = 2n;
+    config.hotelOpenTimestamp = 1_700_000_000;
+    const result = validateProductionConfig(config);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues.some((i) => i.key === "HOTEL_ELIGIBILITY_SIGNER_ADDRESS")).toBe(true);
+    }
   });
 });

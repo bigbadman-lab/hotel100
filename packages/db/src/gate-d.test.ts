@@ -1,13 +1,11 @@
-import { PGlite } from "@electric-sql/pglite";
+import type { PGlite } from "@electric-sql/pglite";
 import { describe, expect, it } from "vitest";
-import { FIXTURE_ADDR, applyHotelMigrations } from "./migrate.js";
+import { applyHotelMigrations, FIXTURE_ADDR } from "./migrate.js";
 
 const SERVICE_N = 1_888_889n;
-const BOUNDARY = Number(SERVICE_N) * 900;
+const _BOUNDARY = Number(SERVICE_N) * 900;
 
-function allocJson(
-  rows: Array<{ guest: string; balance: string; alloc: string }>,
-): string {
+function allocJson(rows: Array<{ guest: string; balance: string; alloc: string }>): string {
   return JSON.stringify(
     rows.map((r) => ({
       guest_address: r.guest,
@@ -88,6 +86,8 @@ describe("Gate D HOTEL database schema + finalize RPC", () => {
       "operational_incidents",
       "worker_write_audit",
       "deployment_audits",
+      "check_in_events",
+      "check_in_positions",
     ]) {
       expect(names).toContain(required);
     }
@@ -132,8 +132,7 @@ describe("Gate D HOTEL database schema + finalize RPC", () => {
 
   it("enforces unique (tx_hash, log_index) for processed transfers", async () => {
     const db = await applyHotelMigrations();
-    const tx =
-      "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const tx = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     await db.query(
       `INSERT INTO processed_transfer_logs
         (tx_hash, log_index, block_number, from_address, to_address, value_raw)
@@ -277,9 +276,7 @@ describe("Gate D HOTEL database schema + finalize RPC", () => {
     const allocs = await db.query<{ c: number }>(
       `SELECT count(*)::int AS c FROM service_allocations`,
     );
-    const ents = await db.query<{ c: number }>(
-      `SELECT count(*)::int AS c FROM guest_entitlements`,
-    );
+    const ents = await db.query<{ c: number }>(`SELECT count(*)::int AS c FROM guest_entitlements`);
     expect(rounds.rows[0]?.c).toBe(0);
     expect(allocs.rows[0]?.c).toBe(0);
     expect(ents.rows[0]?.c).toBe(0);
@@ -305,9 +302,7 @@ describe("Gate D HOTEL database schema + finalize RPC", () => {
     ).rejects.toThrow(/immutable/i);
 
     await expect(
-      db.query(`DELETE FROM service_allocations WHERE service_number = $1`, [
-        Number(SERVICE_N),
-      ]),
+      db.query(`DELETE FROM service_allocations WHERE service_number = $1`, [Number(SERVICE_N)]),
     ).rejects.toThrow(/immutable/i);
   });
 
@@ -341,10 +336,9 @@ describe("Gate D HOTEL database schema + finalize RPC", () => {
     expect(earned.rows[0]?.earned).toBe("13");
 
     await expect(
-      db.query(
-        `UPDATE guest_entitlements SET cumulative_earned_wei = 1 WHERE guest_address = $1`,
-        [FIXTURE_ADDR.a],
-      ),
+      db.query(`UPDATE guest_entitlements SET cumulative_earned_wei = 1 WHERE guest_address = $1`, [
+        FIXTURE_ADDR.a,
+      ]),
     ).rejects.toThrow(/non_monotonic/i);
   });
 
@@ -393,9 +387,7 @@ describe("Gate D HOTEL database schema + finalize RPC", () => {
        VALUES ($1, 'test fixture burn', 'burn')`,
       [FIXTURE_ADDR.mixed],
     );
-    const excl = await db.query<{ address: string }>(
-      `SELECT address FROM excluded_addresses`,
-    );
+    const excl = await db.query<{ address: string }>(`SELECT address FROM excluded_addresses`);
     expect(excl.rows[0]?.address).toBe("0x00000000000000000000000000000000000000aa");
   });
 });
