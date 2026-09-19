@@ -35,5 +35,26 @@
       "quoteStyle": "double",
       "semicolons": "always"
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["**/apps/web/src/app/globals.css"],
+      "formatter": {
+        "enabled": false
+      },
+      "linter": {
+        "rules": {
+          "complexity": {
+            "noImportantStyles": "off"
+          },
+          "style": {
+            "noDescendingSpecificity": "off"
+          },
+          "correctness": {
+            "noInvalidGridAreas": "off"
+          }
+        }
+      }
+    }
+  ]
 }

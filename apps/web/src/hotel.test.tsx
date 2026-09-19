@@ -18,8 +18,10 @@ import {
 } from "./hotel/source";
 
 describe("Gate H public hotel UI", () => {
-  it("keeps 99 façade rooms in fixed 11 by 9 order under a separate penthouse", () => {
-    expect(FACADE_COLUMNS * FACADE_ROWS).toBe(99);
+  it("keeps 99 façade rooms in approved 10-column order under a separate penthouse", () => {
+    expect(FACADE_COLUMNS).toBe(10);
+    expect(FACADE_ROWS).toBe(10);
+    expect(99).toBe(9 + 9 * FACADE_COLUMNS);
     const numbers = standardRoomNumbers();
     expect(numbers[0]).toBe(2);
     expect(numbers.at(-1)).toBe(100);
@@ -37,15 +39,45 @@ describe("Gate H public hotel UI", () => {
         onSelect={() => undefined}
       />,
     );
-    expect(html).toContain("PENTHOUSE");
+    expect(html).toContain("Penthouse");
+    expect(html).toContain('class="hotel-facade');
+    expect(html).toContain("hotel-window");
+    expect(html).toContain("hotel-hedge__tree");
     expect(html.match(/data-room="/g)?.length).toBe(99);
     expect(html.indexOf('data-room="2"')).toBeLessThan(html.indexOf('data-room="12"'));
     expect(html.indexOf('data-room="12"')).toBeLessThan(html.indexOf('data-room="100"'));
     expect(html).toContain('id="room-47"');
-    expect(html).toContain("you");
-    expect(html).toContain("room vacant");
+    expect(html).toContain("is-connected");
+    expect(html).toContain("vacant");
     expect(html).not.toContain(">VAC<");
-    expect(html).not.toContain("0x0000000000000000000000000000000000000a31");
+    // Visible plaques shorten wallets; aria-labels may include the full address.
+    expect(html).toContain("0x000…0a31");
+    expect(html).not.toMatch(/>0x0000000000000000000000000000000000000a31</);
+  });
+
+  it("ports Lovable shell class names without fixture copy or local claim state", () => {
+    const html = renderToStaticMarkup(
+      <HotelFacade
+        snapshot={fixtureSnapshot("checked_in")}
+        selectedRoom={1}
+        youRoom={null}
+        stale={false}
+        arriving={true}
+        lightRooms={[]}
+        penthouseMotion={false}
+        entranceMotion={false}
+        onSelect={() => undefined}
+      />,
+    );
+    expect(html).toContain("hotel-facade--service");
+    expect(html).toContain("hotel-building__pediment");
+    expect(html).toContain("hotel-penthouse__plaque");
+    expect(html).toContain("hotel-entrance__plaque");
+    expect(html).toContain("hotel-plinth__step");
+    expect(html.match(/hotel-hedge__tree/g)?.length).toBe(22);
+    expect(html.match(/hotel-row/g)?.length).toBeGreaterThanOrEqual(10);
+    expect(html).not.toContain("Prototype only");
+    expect(html).not.toContain("onToggleWallet");
   });
 
   it("uses canonical movement math for the checked-in guest and lobby door", () => {

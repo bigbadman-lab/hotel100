@@ -5,11 +5,12 @@ import { useEffect, useRef, useState } from "react";
 import { claimUiAfterSubmit, type EthereumRequest, executeRoomServiceClaim } from "./claim";
 import {
   HotelFacade,
+  HotelFooter,
   HotelHeader,
   HotelMarketStrip,
   HotelOperationalState,
   LiveActivity,
-  LobbyQueue,
+  LobbySheet,
   RoomServicePanel,
   YourStayPanel,
 } from "./components/HotelView";
@@ -47,6 +48,7 @@ export function HotelApp(props: {
   const [selectedRoom, setSelectedRoom] = useState(() =>
     initial.stay.kind === "checked_in" ? initial.stay.room : 1,
   );
+  const [lobbyOpen, setLobbyOpen] = useState(false);
   const [cues, setCues] = useState<MotionCue[]>([]);
   const [walletOverride, setWalletOverride] = useState<Address | null>(null);
   const [claimNote, setClaimNote] = useState("");
@@ -188,58 +190,74 @@ export function HotelApp(props: {
   const lightRooms = cues.flatMap((cue) => (cue.kind === "occupant-light" ? [cue.room] : []));
   return (
     <div
-      className="shell"
+      className="hotel-shell"
       data-hotel-mode={snapshot.source}
       data-hotel-live={snapshot.hotelLive ? "true" : "false"}
     >
       <HotelHeader
         status={status}
         serviceLabel={headerService}
-        walletLabel={wallet ? shortenAddress(wallet) : "Connect wallet"}
+        walletLabel={wallet ? shortenAddress(wallet) : "Connect Wallet"}
         onConnect={() => void onConnect()}
       />
       <HotelOperationalState status={status} current={current || snapshot.fixturePreview} />
-      <main className="main">
-        <YourStayPanel stay={snapshot.stay} nowMs={nowMs} />
-        <HotelFacade
-          snapshot={snapshot}
-          selectedRoom={selectedRoom}
-          youRoom={youRoom}
-          stale={!current && snapshot.hotelLive}
-          arriving={
-            cues.some((cue) => cue.kind === "room-service-arriving") || serviceState === "arriving"
-          }
-          lightRooms={lightRooms}
-          penthouseMotion={cues.some((cue) => cue.kind === "penthouse-takeover")}
-          entranceMotion={cues.some((cue) => cue.kind === "check-in-100")}
-          onSelect={setSelectedRoom}
-        />
-        <RoomServicePanel
-          state={serviceState}
-          claimableWei={claimable}
-          clock={serviceState === "arriving" ? "ARRIVING" : clock}
-          minuteLabel={
-            serviceState === "arriving"
-              ? "is arriving"
-              : remaining === null
-                ? "time is loading"
-                : `in ${Math.ceil((remaining ?? 0) / 60)} minutes`
-          }
-          claimDisabled={
-            claimable <= 0n ||
-            serviceState === "none" ||
-            (!snapshot.fixturePreview && !snapshot.hotelLive) ||
-            (!snapshot.fixturePreview && !props.roomServiceAddress)
-          }
-          claimNote={claimNote}
-          onClaim={() => void onClaim()}
-        />
-        <LobbyQueue lobby={snapshot.lobby} doorBalance={door?.balanceRaw ?? null} />
-      </main>
-      <div className="bottom">
-        <LiveActivity items={snapshot.activity} />
+      <main className="hotel-main">
+        <div className="hotel-grid">
+          <YourStayPanel
+            stay={snapshot.stay}
+            nowMs={nowMs}
+            wallet={wallet}
+            onConnect={() => void onConnect()}
+            onFocusRoom={() => {
+              if (youRoom !== null) setSelectedRoom(youRoom);
+            }}
+          />
+          <HotelFacade
+            snapshot={snapshot}
+            selectedRoom={selectedRoom}
+            youRoom={youRoom}
+            stale={!current && snapshot.hotelLive}
+            arriving={
+              cues.some((cue) => cue.kind === "room-service-arriving") ||
+              serviceState === "arriving"
+            }
+            lightRooms={lightRooms}
+            penthouseMotion={cues.some((cue) => cue.kind === "penthouse-takeover")}
+            entranceMotion={cues.some((cue) => cue.kind === "check-in-100")}
+            onSelect={setSelectedRoom}
+          />
+          <RoomServicePanel
+            state={serviceState}
+            claimableWei={claimable}
+            clock={serviceState === "arriving" ? "ARRIVING" : clock}
+            minuteLabel={
+              serviceState === "arriving"
+                ? "is arriving"
+                : remaining === null
+                  ? "time is loading"
+                  : `in ${Math.ceil((remaining ?? 0) / 60)} minutes`
+            }
+            claimDisabled={
+              claimable <= 0n ||
+              serviceState === "none" ||
+              (!snapshot.fixturePreview && !snapshot.hotelLive) ||
+              (!snapshot.fixturePreview && !props.roomServiceAddress)
+            }
+            claimNote={claimNote}
+            connected={wallet !== null}
+            onClaim={() => void onClaim()}
+          />
+        </div>
+        <LiveActivity items={snapshot.activity} nowMs={nowMs} />
         <HotelMarketStrip market={snapshot.market} />
-      </div>
+      </main>
+      <HotelFooter onOpenLobby={() => setLobbyOpen(true)} />
+      <LobbySheet
+        open={lobbyOpen}
+        guests={snapshot.lobby}
+        door={door}
+        onClose={() => setLobbyOpen(false)}
+      />
     </div>
   );
 }
